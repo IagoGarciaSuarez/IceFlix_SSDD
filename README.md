@@ -20,3 +20,10 @@ following files and directories:
 - `setup.cfg` is a Python distribution configuration file for
   Setuptools. It needs to be modified in order to adeccuate to the
   package name and console handler functions.
+
+
+## Project description
+
+This project will recreate the way Netflix works from a distributed systems 
+developer perspective.
+Using Zeroc-ice, a small emulation of a video streaming service will be built.
