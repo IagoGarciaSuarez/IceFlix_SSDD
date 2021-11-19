@@ -1,0 +1,2 @@
+./authenticator --Ice.Config=Auth.config | tee proxy.out
+./server.py --Ice.Config=Server.config | tee proxy.out
