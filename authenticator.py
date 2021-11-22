@@ -65,7 +65,7 @@ class AuthServer(Ice.Application):
 
         credentials = open('credentials.json', 'r')
 
-        servant = Authenticator()
+        servant = Authenticator(credentials)
 
         authAdapter = broker.createObjectAdapter("AuthAdapter")
         authPrx = authAdapter.add(servant, broker.stringToIdentity("AuthService"))

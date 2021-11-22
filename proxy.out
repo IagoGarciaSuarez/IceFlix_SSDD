@@ -1,0 +1,8 @@
+MainService -t -e 1.1:tcp -h 172.19.173.18 -p 7070 -t 60000
+
+Añadiendo nuevo servicio de catálogo...
+Nuevo servicio de catálogo añadido.
+Se ha intentado registrar un servicio de catálogo ya existente.
+Se ha intentado registrar un servicio de catálogo ya existente.
+Se ha intentado registrar un servicio de catálogo ya existente.
+Se ha intentado registrar un servicio de catálogo ya existente.

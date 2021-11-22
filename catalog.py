@@ -2,16 +2,35 @@
 # -*- coding: utf-8 -*-
 
 import sys
+from utils import CatalogDB
 import Ice
 Ice.loadSlice('iceflix.ice')
 import IceFlix
 
 class Catalog(IceFlix.MediaCatalog):
-    def isAdmin(self, token, current=None):
-        if token == self.properties.getProperty('AdminToken'):
-            return True
+    def __init__(self, catalog):
+        self._catalog = catalog
+        self._mediaWithProxy = {}
 
-        return False
+    def updateMedia(self, id, initialName, provider, current=None): 
+        if not self._catalog.isInCatalog(id):
+            self._catalog.addMedia(id, initialName)
+
+        self._mediaWithProxy[id] = provider
+
+    def getTile(self, id, current=None):
+        if not self._catalog.isInCatalog(id):
+            raise IceFlix.WrongMediaId(id)
+        
+        elif id not in self._mediaWithProxy:
+            raise IceFlix.TemporaryUnavailable
+
+        #Add struct media object
+
+    def getTilesByName(self, name, exact, current=None):
+        if exact:
+            return self._catalog.getByName(name)
+        return self._catalog.getWithName(name)
         
 
 class CatalogServer(Ice.Application):
@@ -24,7 +43,9 @@ class CatalogServer(Ice.Application):
         if not mainService:
             raise RuntimeError('Invalid proxy for the main service')
 
-        servant = Catalog()
+        catalog_db = CatalogDB('catalog.db')
+
+        servant = Catalog(catalog_db)
 
         catalogAdapter = broker.createObjectAdapter("CatalogAdapter")
         catalogPrx = catalogAdapter.add(servant, broker.stringToIdentity("CatalogService"))
@@ -33,6 +54,7 @@ class CatalogServer(Ice.Application):
 
         catalogAdapter.activate()
         self.shutdownOnInterrupt()
+        catalog_db.closeConnection()
         broker.waitForShutdown()
 
         return 0
