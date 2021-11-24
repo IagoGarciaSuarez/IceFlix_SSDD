@@ -18,6 +18,27 @@ class MainService(IceFlix.Main):
         return False
 
     def register(self, proxy, current=None):
+
+        # try:
+        #     authPrx = IceFlix.AuthenticatorPrx.checkedCast(proxy)    
+        #     if authPrx in self._services_proxies["AuthPrx"]:
+        #         print("Se ha intentado registrar un servicio de autenticación ya existente.")
+        #         return 
+                
+        #     return authPrx
+
+        # except Ice.NoEndpointException:
+        #     try:
+        #         catalogPrx = IceFlix.MediaCatalogPrx.checkedCast(proxy)
+        #         if catalogPrx in self._services_proxies["CatalogPrx"]:
+        #             print("Se ha intentado registrar un servicio de catálogo ya existente.")
+        #             return 
+        #         return catalogPrx
+
+        #     except Ice.NoEndpointException:
+        #         print('[ERROR] Se ha intentado registrar un servicio desconocido.')
+        #         raise IceFlix.UnknownService
+            
         if "AuthService" in str(proxy):
             for authPrx in self._services_proxies["AuthPrx"]:
                 if authPrx == proxy:
@@ -45,7 +66,8 @@ class MainService(IceFlix.Main):
         for authPrx in self._services_proxies["AuthPrx"]:
             try:
                 authPrx.ice_ping()
-                return authPrx
+                print('Se ha obtenido el proxy de autenticador: ', authPrx)
+                return IceFlix.AuthenticatorPrx.checkedCast(authPrx)
 
             except Ice.ConnectionRefusedException:
                 pass
@@ -58,7 +80,8 @@ class MainService(IceFlix.Main):
         for catalogPrx in self._services_proxies["CatalogPrx"]:
             try:
                 catalogPrx.ice_ping()
-                return catalogPrx
+                print('Se ha obtenido el proxy de catalogo: ', catalogPrx)
+                return IceFlix.MediaCatalogPrx.checkedCast(catalogPrx)
 
             except Ice.ConnectionRefusedException:
                 pass

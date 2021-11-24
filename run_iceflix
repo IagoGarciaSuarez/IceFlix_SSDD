@@ -1,3 +1,1 @@
 ./server.py --Ice.Config=Server.config | tee proxy.out
-./authenticator.py --Ice.Config=Auth.config '$(shell head -1 proxy.out)'
-./catalog.py --Ice.Config=Catalog.config '$(shell head -1 proxy.out)'

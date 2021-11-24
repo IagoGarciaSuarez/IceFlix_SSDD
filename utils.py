@@ -1,4 +1,8 @@
 import sqlite3
+from os import listdir
+from os.path import isfile, join
+import hashlib
+
 
 class CatalogDB():
     def __init__(self, database):
@@ -63,3 +67,15 @@ class CatalogDB():
 
     def closeConnection(self):
         self._connection.close()
+
+def getSHA256(filename):
+    sha256_hash = hashlib.sha256()
+    with open(filename,"rb") as f:
+        for byte_block in iter(lambda: f.read(4096),b""):
+            sha256_hash.update(byte_block)
+    f.close()
+    return sha256_hash.hexdigest()
+
+def listFiles(path):
+    onlyfiles = [f for f in listdir(path) if isfile(join(path, f))]
+    return onlyfiles

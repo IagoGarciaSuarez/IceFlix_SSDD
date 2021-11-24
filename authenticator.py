@@ -9,49 +9,51 @@ Ice.loadSlice('iceflix.ice')
 import IceFlix
 
 class Authenticator(IceFlix.Authenticator):
-    def __init__(self, usersWithToken):
-        self._usersWithToken = usersWithToken
+    def __init__(self, credentials, usersToken, mainService):
+        self._credentials = credentials
+        self._usersToken = usersToken
+        self._mainService = mainService
 
     def refreshAuthorization(self, username, passwordHash, current=None):
-        for user in self._usersWithToken:
-            if user['username'] == username and user['passwordHash'] == passwordHash:
+        for user in self._credentials:
+            if user == username and self._credentials[user] == passwordHash:
                 newToken = secrets.token_urlsafe(40)
-                user["token"]=newToken
+                self._usersToken[user]=newToken
                 return newToken
 
-        raise IceFlix.Unauthorized()
+        raise IceFlix.Unauthorized
 
     def isAuthorized(self, token, current=None):
-        for user in self._usersWithToken:
-            if token == user['token']:
+        for user in self._usersToken:
+            if token == self._usersToken[user]:
                 return True
         return False
 
     def whois(self, token, current=None):
         if self.isAuthorized(token):
-            for user in self._usersWithToken:
-                if user['token'] == token:
-                    return user['username']
-        raise IceFlix.Unauthorized()
+            for user in self._usersToken:
+                if self._usersToken[user] == token:
+                    return user
+        raise IceFlix.Unauthorized
     
     def addUser(self, username, passwordHash, adminToken, current=None):
-        for user in self._usersWithToken:
-            if user["username"] == username:
-                print("Nombre de usuario ya existente.")
-                return
+        if not self._mainService.isAdmin(adminToken):
+            raise IceFlix.Unauthorized
 
-        newUser = {
-            "username": username,
-            "passwordHash": passwordHash
-        }
-        self._usersWithToken.append(newUser)
+        if username in self._usersToken:
+            print("Nombre de usuario ya existente.")
+            return
+        self._credentials[username] = passwordHash
         print("Nuevo usuario creado con nombre: ", username)
+        
 
     def removeUser(self, username, adminToken, current=None):
-        for user in self._usersWithToken:
-            if user["username"] == username:
-                self._usersWithToken.remove(user)
-                print("Se ha eliminado el usuario con nombre: ", username)
+        if not self._mainService.isAdmin(adminToken) or username not in self._credentials:
+            raise IceFlix.Unauthorized
+
+        self._credentials.pop(username)
+        self._usersToken.pop(username)
+        
 
 class AuthServer(Ice.Application):
     def run(self, argv):
@@ -64,8 +66,10 @@ class AuthServer(Ice.Application):
             raise RuntimeError('Invalid proxy for the main service')
 
         credentials = open('credentials.json', 'r')
+        #usersToken with form {<username>: <token>}
+        usersTokens = {}
 
-        servant = Authenticator(credentials)
+        servant = Authenticator(credentials, usersTokens, mainService)
 
         authAdapter = broker.createObjectAdapter("AuthAdapter")
         authPrx = authAdapter.add(servant, broker.stringToIdentity("AuthService"))
