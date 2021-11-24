@@ -1,8 +1,9 @@
 *pyc
 *~
 .vscode
+__pycache__
 
-
+proxy.out
 build/
 dist/
 *.egg-info/
