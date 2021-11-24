@@ -15,12 +15,10 @@ class Authenticator(IceFlix.Authenticator):
         self._mainService = mainService
 
     def refreshAuthorization(self, username, passwordHash, current=None):
-        for user in self._credentials:
-            if user == username and self._credentials[user] == passwordHash:
-                newToken = secrets.token_urlsafe(40)
-                self._usersToken[user]=newToken
-                return newToken
-
+        if username in self._credentials and self._credentials[username] == passwordHash:
+            newToken = secrets.token_urlsafe(40)
+            self._usersToken[username]=newToken
+            return newToken
         raise IceFlix.Unauthorized
 
     def isAuthorized(self, token, current=None):
@@ -40,9 +38,6 @@ class Authenticator(IceFlix.Authenticator):
         if not self._mainService.isAdmin(adminToken):
             raise IceFlix.Unauthorized
 
-        if username in self._usersToken:
-            print("Nombre de usuario ya existente.")
-            return
         self._credentials[username] = passwordHash
         print("Nuevo usuario creado con nombre: ", username)
         

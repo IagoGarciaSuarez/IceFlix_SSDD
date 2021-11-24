@@ -3,6 +3,7 @@ from os import listdir
 from os.path import isfile, join
 import hashlib
 
+SERVER_MEDIA_DIR = 'server_media/'
 
 class CatalogDB():
     def __init__(self, database):
