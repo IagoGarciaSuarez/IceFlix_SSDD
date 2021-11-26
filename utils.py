@@ -1,21 +1,35 @@
 import sqlite3
-from os import listdir
+from os import listdir, remove, rename
 from os.path import isfile, join
 import hashlib
+import json
 
 SERVER_MEDIA_DIR = 'server_media/'
+TAGS_DB = 'tagsDB.json'
+CREDENTIALS_DB = 'credentials.json'
+ICEFLIX_BANNER = """
+  ___         _____ _ _      
+ |_ _|___ ___|  ___| (_)_  __
+  | |/ __/ _ \ |_  | | \ \/ /
+  | | (_|  __/  _| | | |>  < 
+ |___\___\___|_|   |_|_/_/\_\
+                             
+"""
 
 class CatalogDB():
     def __init__(self, database):
-        self._connection = self._create_connection(database)
-        self._cursor = self._connection.cursor()
-        if self._connection is not None:
-            self._create_table()
+        self.database = database
+        # self._connection = self._create_connection(database)
+        # self._connection.row_factory = lambda cursor, row: row[0]
+        # self._cursor = self._connection.cursor()
+        # if self._connection is not None:
+        #     self._create_table()
 
     def _create_connection(self, database_file):
         conn = None
         try:
             conn = sqlite3.connect(database_file)
+            conn.row_factory = lambda cursor, row: row[0]
             return conn
 
         except Exception as e:
@@ -25,49 +39,69 @@ class CatalogDB():
 
     def _create_table(self):
         create_table_sql = 'CREATE TABLE IF NOT EXISTS catalog (id text PRIMARY KEY,initialName text NOT NULL);'
-        try:
-            c = self._connection.cursor()
-            c.execute(create_table_sql)
-        except Exception as e:
-            print(e)
+        with self._create_connection(self.database) as conn:
+            cursor = conn.cursor()
+            cursor.execute(create_table_sql)
+        conn.close()
 
     def getAll(self):
         getAll_sql = 'SELECT * FROM catalog'
-
-        self._cursor.execute(getAll_sql)
-        
-        return self._cursor.fetchall()
+        with self._create_connection(self.database) as conn:
+            cursor = conn.cursor()
+            cursor.execute(getAll_sql)
+            result = cursor.fetchall()
+        conn.close()
+        return result
 
     def isInCatalog(self, id):
         exist_sql = f"SELECT * FROM catalog WHERE EXISTS(SELECT 1 FROM catalog WHERE id='{id}');"
-        self._cursor.execute(exist_sql)
-        if self._cursor.fetchone():
-            return True
-        return False
+        with self._create_connection(self.database) as conn:
+            cursor = conn.cursor()
+            cursor.execute(exist_sql)
+            result = False
+            if cursor.fetchone():
+                result = True
+        conn.close()
+        return result
 
     def addMedia(self, id, initialName):
         add_sql = f"INSERT INTO catalog VALUES('{id}','{initialName}')"
+        with self._create_connection(self.database) as conn:
+            cursor = conn.cursor()
+            cursor.execute(add_sql)
+            conn.commit()
+        conn.close()
 
-        self._cursor.execute(add_sql)
-        self._connection.commit()
+    def getIdByName(self, name, exact):
+        if exact:
+            getIdByName_sql = f"SELECT id FROM catalog WHERE initialName='{name}'"
 
-    def getByName(self, name):
-        getByName_sql = f"SELECT * FROM catalog WHERE initialName='{name}'"
+        else:
+            getIdByName_sql = f"SELECT id FROM catalog WHERE initialName LIKE '%{name}%'"
 
-        self._cursor.execute(getByName_sql)
-        
-        return self._cursor.fetchall()
+        with self._create_connection(self.database) as conn:
+            cursor = conn.cursor()
+            cursor.execute(getIdByName_sql)
+            result = cursor.fetchall()
+        return result
+    
+    def getNameById(self, id):
+        getByName_sql = f"SELECT initialName FROM catalog WHERE id='{id}'"
+        with self._create_connection(self.database) as conn:
+            cursor = conn.cursor()
+            cursor.execute(getByName_sql)
+            result = cursor.fetchone()
+        return result
 
-    def getWithName(self, name):
-        getByName_sql = f"SELECT * FROM catalog WHERE initialName LIKE '%{name}%'"
+    def renameMedia(self, id, name):
+        renameMedia_sql = f"UPDATE catalog SET initialName={name} WHERE id={id}"
+        with self._create_connection(self.database) as conn:
+            cursor = conn.cursor()
+            cursor.execute(renameMedia_sql)
+            conn.commit()
+        conn.close()
 
-        self._cursor.execute(getByName_sql)
-        
-        return self._cursor.fetchall()
-
-
-    def closeConnection(self):
-        self._connection.close()
+#=================== GENERAL FUNCTIONS ===================
 
 def getSHA256(filename):
     sha256_hash = hashlib.sha256()
@@ -80,3 +114,35 @@ def getSHA256(filename):
 def listFiles(path):
     onlyfiles = [f for f in listdir(path) if isfile(join(path, f))]
     return onlyfiles
+
+def removeFile(id):
+    for media in listFiles(SERVER_MEDIA_DIR):
+        if getSHA256(SERVER_MEDIA_DIR + media) == id:
+            remove(SERVER_MEDIA_DIR + media)
+            return True
+    return False
+    
+def readTagsDB():
+    with open(TAGS_DB, 'r') as f:
+            tagsDB = json.load(f)
+            f.close()
+    return tagsDB
+
+def writeTagsDB(tagsDB):
+    with open(TAGS_DB, 'w') as f:
+        json.dump(tagsDB, f)
+        f.close()
+
+def readCredDB():
+    with open(CREDENTIALS_DB, 'r') as f:
+        credDB = json.load(f)
+        f.close()
+    return credDB
+
+def writeCredDB(credDB):
+    with open(CREDENTIALS_DB, 'w') as f:
+        json.dump(credDB, f)
+        f.close()
+
+def getPasswordSHA256(password):
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()

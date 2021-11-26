@@ -18,7 +18,8 @@ class MainService(IceFlix.Main):
         return False
 
     def register(self, proxy, current=None):
-
+        # proxy.ice_isA('::IceFlix::MediaCatalog')
+        # print('BIEN')
         # try:
         #     authPrx = IceFlix.AuthenticatorPrx.checkedCast(proxy)    
         #     if authPrx in self._services_proxies["AuthPrx"]:
@@ -38,7 +39,7 @@ class MainService(IceFlix.Main):
         #     except Ice.NoEndpointException:
         #         print('[ERROR] Se ha intentado registrar un servicio desconocido.')
         #         raise IceFlix.UnknownService
-            
+        #=================================================
         if "AuthService" in str(proxy):
             for authPrx in self._services_proxies["AuthPrx"]:
                 if authPrx == proxy:

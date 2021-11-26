@@ -2,20 +2,25 @@
 # -*- coding: utf-8 -*-
 
 import sys
-import json
 import secrets
+from utils import readCredDB, writeCredDB
 import Ice
 Ice.loadSlice('iceflix.ice')
 import IceFlix
 
 class Authenticator(IceFlix.Authenticator):
-    def __init__(self, credentials, usersToken, mainService):
-        self._credentials = credentials
+    def __init__(self, usersToken, mainService):
         self._usersToken = usersToken
         self._mainService = mainService
 
     def refreshAuthorization(self, username, passwordHash, current=None):
-        if username in self._credentials and self._credentials[username] == passwordHash:
+        credentials = readCredDB()
+        #Needs another way to read the adminToken
+        if username == 'admin' and credentials[username] == passwordHash:
+            self._usersToken[username] = "sysadmin"
+            return "sysadmin"
+
+        if username in credentials and credentials[username] == passwordHash:
             newToken = secrets.token_urlsafe(40)
             self._usersToken[username]=newToken
             return newToken
@@ -38,15 +43,20 @@ class Authenticator(IceFlix.Authenticator):
         if not self._mainService.isAdmin(adminToken):
             raise IceFlix.Unauthorized
 
-        self._credentials[username] = passwordHash
+        credentials = readCredDB()
+        credentials[username] = passwordHash
+        writeCredDB(credentials)
         print("Nuevo usuario creado con nombre: ", username)
         
 
     def removeUser(self, username, adminToken, current=None):
-        if not self._mainService.isAdmin(adminToken) or username not in self._credentials:
+        credentials = readCredDB()
+        if not self._mainService.isAdmin(adminToken) or username not in credentials:
             raise IceFlix.Unauthorized
 
-        self._credentials.pop(username)
+        credentials.pop(username)
+        writeCredDB(credentials)
+
         self._usersToken.pop(username)
         
 
@@ -60,11 +70,10 @@ class AuthServer(Ice.Application):
         if not mainService:
             raise RuntimeError('Invalid proxy for the main service')
 
-        credentials = open('credentials.json', 'r')
-        #usersToken with form {<username>: <token>}
+
         usersTokens = {}
 
-        servant = Authenticator(credentials, usersTokens, mainService)
+        servant = Authenticator(usersTokens, mainService)
 
         authAdapter = broker.createObjectAdapter("AuthAdapter")
         authPrx = authAdapter.add(servant, broker.stringToIdentity("AuthService"))

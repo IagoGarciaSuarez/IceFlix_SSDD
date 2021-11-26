@@ -1,7 +1,6 @@
 #!/usr/bin/make -f
 # -*- mode:makefile -*-
 
-all:
 run-server:
 		./server.py --Ice.Config=Server.config | tee proxy.out
 
