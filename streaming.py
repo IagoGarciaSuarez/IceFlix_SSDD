@@ -1,115 +1,128 @@
 #!/usr/bin/python3 -u
 # -*- coding: utf-8 -*-
-
-from os import remove
+'''
+Archivo que implementa las clases correspondientes al servicio de streaming.
+'''
 import sys
 from os.path import splitext
-from utils import getSHA256, listFiles, removeFile, SERVER_MEDIA_DIR 
-import Ice
+import Ice # pylint: disable=import-error,wrong-import-position
+from utils import getSHA256, listFiles, removeFile, SERVER_MEDIA_DIR
 Ice.loadSlice('iceflix.ice')
-import IceFlix
+import IceFlix # pylint: disable=import-error,wrong-import-position
 
 class StreamProvider(IceFlix.StreamProvider):
-    def __init__(self, mainService, catalogService, providerAdapter):
-        self._mainService = mainService
-        self._catalogService = catalogService
-        self._prx = providerAdapter
+    '''Clase que implementa la interfaz de IceFlix para el stream provider.'''
+    def __init__(self, main_service, catalog_service, provider_adapter):
+        self._main_service = main_service
+        self._catalog_service = catalog_service
+        self._prx = provider_adapter
 
-    def getStream(self, id, userToken, current=None):
-        auth = self._mainService.getAuthenticator()
+    def getStream(self, media_id, user_token, current=None):# pylint: disable=invalid-name
+        '''Comprueba que el token es válido y devuelve un objeto stream controller.'''
+        auth = self._main_service.getAuthenticator()
 
-        if not auth.isAuthorized(userToken):
+        if not auth.isAuthorized(user_token):
             raise IceFlix.Unauthorized
 
-        mediaFilesList = listFiles(SERVER_MEDIA_DIR)
+        media_files_list = listFiles(SERVER_MEDIA_DIR)
 
-        for media in mediaFilesList:
-            if getSHA256(SERVER_MEDIA_DIR + media) == id:
-                servant = StreamController(userToken, self._mainService)
-                controllerPrx = current.adapter.addWithUUID(servant)
-                return IceFlix.StreamControllerPrx.checkedCast(controllerPrx)
-        
-        raise IceFlix.WrongMediaId(id)
+        for media in media_files_list:
+            if getSHA256(SERVER_MEDIA_DIR + media) == media_id:
+                servant = StreamController(user_token, self._main_service)
+                controller_prx = current.adapter.addWithUUID(servant)
+                return IceFlix.StreamControllerPrx.checkedCast(controller_prx)
 
-    def isAvailable(self, id, current=None):
+        raise IceFlix.WrongMediaId(media_id)
+
+    def isAvailable(self, media_id, current=None): # pylint: disable=invalid-name, unused-argument, no-self-use
+        '''Comprueba si el medio está disponible.'''
         for media in listFiles(SERVER_MEDIA_DIR):
-            if getSHA256(SERVER_MEDIA_DIR + media) == id:
+            if getSHA256(SERVER_MEDIA_DIR + media) == media_id:
                 return True
         return False
 
-    def uploadMedia(self, fileName, uploader, adminToken, current=None):
-        if not self._mainService.isAdmin(adminToken):
+    def uploadMedia(self, fileName, uploader, adminToken, current=None): # pylint: disable=invalid-name, unused-argument
+        '''Sube un medio al servidor.'''
+        if not self._main_service.isAdmin(adminToken):
             raise IceFlix.Unauthorized
 
-        #Implementar subida con MediaUploader
+        # Implementar subida con MediaUploader
 
         raise IceFlix.UploadError
 
-    def deleteMedia(self, id, adminToken, current=None):
-        if not self._mainService.isAdmin(adminToken):
+    def deleteMedia(self, media_id, adminToken, current=None): # pylint: disable=invalid-name, unused-argument
+        '''Elimina un medio dado su id si el token de administración es válido.'''
+        if not self._main_service.isAdmin(adminToken):
             raise IceFlix.Unauthorized
 
-        if not removeFile(id):
+        if not removeFile(media_id):
             raise IceFlix.WrongMediaId
 
+
 class StreamController(IceFlix.StreamController):
-    def __init__(self, userToken, mainService):
-        self._userToken = userToken
-        self._mainService = mainService
+    '''Clase que implementa la interfaz de IceFlix para el stream controller.'''
+    def __init__(self, user_token, main_service):
+        self._user_token = user_token
+        self._main_service = main_service
 
-    def getSDP(self, userToken, port, current=None):
-        auth = self._mainService.getAuthenticator()
+    def getSDP(self, user_token, port, current=None): # pylint: disable=invalid-name, unused-argument
+        '''Devuelve la configuración del flujo RTSP para la reproducción del vídeo.'''
+        auth = self._main_service.getAuthenticator()
 
-        if not auth.isAuthorized(userToken):
+        if not auth.isAuthorized(user_token):
             raise IceFlix.Unauthorized
-        
 
-    def stop(self, current=None):
-        pass
+    def stop(self, current=None): # pylint: disable=invalid-name, unused-argument
+        '''Interrumpe la reproducción de vídeo.'''
+
 
 class MediaUploader(IceFlix.MediaUploader):
+    '''Clase que implementa la interfaz de IceFlix para el media uploader.'''
     def receive(self, size, current=None):
-        pass
+        '''Recibe los datos.'''
 
-    def close():
-        pass
+    def close(self):
+        '''Cierra el archivo.'''
 
-    def destroy():
-        pass
+    def destroy(self):
+        '''Destruye el archivo.'''
+
 
 class StreamServer(Ice.Application):
-    def run(self, argv):
+    '''Clase que implementa a interfaz de IceFlix para el servicio de streaming.'''
+    def run(self, argv): # pylint: disable=arguments-differ
         broker = self.communicator()
-        
-        mainProxy = broker.stringToProxy(argv[1])
-        mainService = IceFlix.MainPrx.checkedCast(mainProxy)
-        
-        if not mainService:
+
+        main_proxy = broker.stringToProxy(argv[1])
+        main_service = IceFlix.MainPrx.checkedCast(main_proxy)
+
+        if not main_service:
             raise RuntimeError('Invalid proxy for the main service')
 
-        catalogProxy =  mainService.getCatalog()
-        catalogService = IceFlix.MediaCatalogPrx.checkedCast(catalogProxy)
-        
-        if not catalogService:
+        catalog_proxy = main_service.getCatalog()
+        catalog_service = IceFlix.MediaCatalogPrx.checkedCast(catalog_proxy)
+
+        if not catalog_service:
             raise RuntimeError('Invalid proxy for the catalog service')
 
+        provider_adapter = broker.createObjectAdapter("ProviderAdapter")
+        servant = StreamProvider(main_service, catalog_service, provider_adapter)
 
-        providerAdapter = broker.createObjectAdapter("ProviderAdapter")
-        servant = StreamProvider(mainService, catalogService, providerAdapter)
+        provider_prx = provider_adapter.add(
+            servant, broker.stringToIdentity("ProviderService"))
+        provider_adapter.activate()
 
-        providerPrx = providerAdapter.add(servant, broker.stringToIdentity("ProviderService"))
-        providerAdapter.activate()
+        media_files_list = listFiles(SERVER_MEDIA_DIR)
+        provider = IceFlix.StreamProviderPrx.checkedCast(provider_prx)
+        for media in media_files_list:
+            catalog_service.updateMedia(
+                getSHA256(SERVER_MEDIA_DIR + media), splitext(media)[0], provider)
 
-        mediaFilesList = listFiles(SERVER_MEDIA_DIR)
-        provider = IceFlix.StreamProviderPrx.checkedCast(providerPrx)
-        for media in mediaFilesList:
-            catalogService.updateMedia(getSHA256(SERVER_MEDIA_DIR + media),
-                                        splitext(media)[0], provider)
-
-        providerAdapter.activate()
+        provider_adapter.activate()
         self.shutdownOnInterrupt()
         broker.waitForShutdown()
 
         return 0
+
 
 sys.exit(StreamServer().main(sys.argv))

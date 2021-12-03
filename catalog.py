@@ -1,146 +1,153 @@
 #!/usr/bin/python3 -u
 # -*- coding: utf-8 -*-
+'''
+Archivo que implementa las clases correspondientes al servicio de catálogo.
+'''
 
 import sys
-from utils import TAGS_DB, CatalogDB, readTagsDB, writeTagsDB
+import Ice # pylint: disable=import-error,wrong-import-position
+from utils import CatalogDB, readTagsDB, writeTagsDB
 from media import Media, MediaInfo
-import json
-import Ice
 Ice.loadSlice('iceflix.ice')
-import IceFlix
+import IceFlix # pylint: disable=import-error,wrong-import-position
+
 
 class Catalog(IceFlix.MediaCatalog):
-    # ====== tagsDB structure ======
-    # {
-    #     String username: {
-    #         String media_id: List<String> tags
-    #     }
-    # }
-    def __init__(self, mainService, catalog):
-        self._mainService = mainService
+    '''Clase que implementa la interfaz de IceFlix para el catálogo.'''
+    def __init__(self, main_service, catalog):
+        self._main_service = main_service
         self._catalog = catalog
-        self._mediaWithProxy = {}
+        self._media_with_proxy = {}
 
-    def updateMedia(self, id, initialName, provider, current=None): 
-        if not self._catalog.isInCatalog(id):
-            self._catalog.addMedia(id, initialName)
-        
-        self._mediaWithProxy[id] = []
-        self._mediaWithProxy[id].append(provider)
+    def updateMedia(self, media_id, initial_name, provider, current=None): # pylint: disable=invalid-name, unused-argument
+        '''Actualiza los datos de un medio.'''
+        if not self._catalog.isInCatalog(media_id):
+            self._catalog.addMedia(media_id, initial_name)
 
-    def addTags(self, id, tags, userToken, current=None):
-        auth = self._mainService.getAuthenticator()
+        self._media_with_proxy[media_id] = []
+        self._media_with_proxy[media_id].append(provider)
 
-        if not auth.isAuthorized(userToken):
+    def addTags(self, media_id, tags, user_token, current=None): # pylint: disable=invalid-name, unused-argument
+        '''Añade tags a un medio.'''
+        auth = self._main_service.getAuthenticator()
+
+        if not auth.isAuthorized(user_token):
             raise IceFlix.Unauthorized
 
-        if not self._catalog.isInCatalog(id):
-            raise IceFlix.WrongMediaId(id)
+        if not self._catalog.isInCatalog(media_id):
+            raise IceFlix.WrongMediaId(media_id)
 
-        #Needs change if tags is not passed as a List object
-        tagsDB = readTagsDB()
-        username = auth.whois(userToken)
-        
-        if username in tagsDB:
+        tags_db = readTagsDB()
+        username = auth.whois(user_token)
+
+        if username in tags_db:
             for tag in tags:
-                tagsDB[username][id].append(tag)
+                tags_db[username][media_id].append(tag)
         else:
             tags_dic = {}
-            tags_dic[id] = tags
-            tagsDB[username] = tags_dic
+            tags_dic[media_id] = tags
+            tags_db[username] = tags_dic
 
-        writeTagsDB(tagsDB)
+        writeTagsDB(tags_db)
 
-    def removeTags(self, id, tags, userToken, current=None):
-        auth = self._mainService.getAuthenticator()
+    def removeTags(self, media_id, tags, user_token, current=None): # pylint: disable=invalid-name, unused-argument
+        '''Elimina tags de un medio.'''
+        auth = self._main_service.getAuthenticator()
 
-        if not auth.isAuthorized(userToken):
+        if not auth.isAuthorized(user_token):
             raise IceFlix.Unauthorized
 
-        if not self._catalog.isInCatalog(id):
-            raise IceFlix.WrongMediaId(id)
-        
-        user = auth.whois(userToken)
-        tagsDB = readTagsDB()
-        tagsDB[user][id] = [t for t in tagsDB[user][id] if t not in tags]
-        tagsDB = writeTagsDB(tagsDB)
+        if not self._catalog.isInCatalog(media_id):
+            raise IceFlix.WrongMediaId(media_id)
 
-    def renameTile(self, id, name, adminToken, current=None):
-        if not self._mainService.isAdmin(adminToken):
+        user = auth.whois(user_token)
+        tags_db = readTagsDB()
+        tags_db[user][media_id] = [t for t in tags_db[user][media_id] if t not in tags]
+        writeTagsDB(tags_db)
+
+    def renameTile(self, media_id, name, adminToken, current=None): # pylint: disable=invalid-name, unused-argument
+        '''Renombra un medio.'''
+        if not self._main_service.isAdmin(adminToken):
             raise IceFlix.Unauthorized
 
-        if not self._catalog.isInCatalog(id):
-            raise IceFlix.WrongMediaId(id)
-        
-        self._catalog.renameMedia(id, name)    
-        
-    def getTile(self, id, current=None):
-        if not self._catalog.isInCatalog(id):
-            raise IceFlix.WrongMediaId(id)
-        
-        elif id not in self._mediaWithProxy:
+        if not self._catalog.isInCatalog(media_id):
+            raise IceFlix.WrongMediaId(media_id)
+
+        self._catalog.renameMedia(media_id, name)
+
+    def getTile(self, media_id, current=None): # pylint: disable=invalid-name, unused-argument
+        '''Obtiene toda la información en forma de objeto Media dado un ID.'''
+        if not self._catalog.isInCatalog(media_id):
+            raise IceFlix.WrongMediaId(media_id)
+
+        if media_id not in self._media_with_proxy:
             raise IceFlix.TemporaryUnavailable
 
-        tagsDB = readTagsDB()
-        for user in tagsDB:
-            if id in tagsDB[user]:
-                tagList = [tag for tag in tagsDB[user][id]]
+        tags_db = readTagsDB()
+        for user in tags_db:
+            if media_id in tags_db[user]:
+                tag_list = [tag for tag in tags_db[user][media_id]]
             else:
-                tagList = []
-                
-        return Media(id, self._mediaWithProxy[id][-1], 
-                MediaInfo(self._catalog.getNameById(id), tagList))
+                tag_list = []
 
-    def getTilesByName(self, name, exact, current=None):        
-        tilesList = self._catalog.getIdByName(name, exact)
-        if tilesList:
-            return tilesList
+        return Media(media_id, self._media_with_proxy[media_id][-1],
+                     MediaInfo(self._catalog.getNameById(media_id), tag_list))
+
+    def getTilesByName(self, name, exact, current=None): # pylint: disable=invalid-name, unused-argument
+        '''Obtiene el ID de un medio dado un nombre.'''
+        tiles_list = self._catalog.getIdByName(name, exact)
+        if tiles_list:
+            return tiles_list
         return []
-        
-    def getTilesByTags(self, tags, includeAllTags, userToken, current=None):
-        auth = self._mainService.getAuthenticator()
 
-        if not auth.isAuthorized(userToken):
+    def getTilesByTags(self, tags, include_all_tags, user_token, current=None): # pylint: disable=invalid-name, unused-argument
+        '''Obtiene el ID de un medio dada una lista de tags.'''
+        auth = self._main_service.getAuthenticator()
+
+        if not auth.isAuthorized(user_token):
             #raise IceFlix.Unauthorized
             print('NO AUTORIZADO')
-            return
-        
-        tagsDB = readTagsDB()
-        user = auth.whois(userToken)
-        tilesList = []
-        for media in tagsDB[user]:
-            if includeAllTags and all(tag in tagsDB[user][media] for tag in tags):
-                tilesList.append(media)
-            elif not includeAllTags and any(tag in tagsDB[user][media] for tag in tags):
-                tilesList.append(media)
+            return []
 
-        return tilesList
-                
+        tags_db = readTagsDB()
+        user = auth.whois(user_token)
+        tiles_list = []
+        for media in tags_db[user]:
+            if include_all_tags and all(tag in tags_db[user][media] for tag in tags):
+                tiles_list.append(media)
+            elif not include_all_tags and any(tag in tags_db[user][media] for tag in tags):
+                tiles_list.append(media)
+
+        return tiles_list
+
 
 class CatalogServer(Ice.Application):
-    def run(self, argv):
+    '''Clase que implementa el servicio de catálogo.'''
+    def run(self, argv): # pylint: disable=arguments-differ
         broker = self.communicator()
-        
-        mainProxy = broker.stringToProxy(argv[1])
-        mainService = IceFlix.MainPrx.checkedCast(mainProxy)
-        
-        if not mainService:
+
+        main_proxy = broker.stringToProxy(argv[1])
+        main_service = IceFlix.MainPrx.checkedCast(main_proxy)
+
+        if not main_service:
             raise RuntimeError('Invalid proxy for the main service')
 
         catalog_db = CatalogDB('catalog.db')
         catalog_db.create_table()
 
-        servant = Catalog(mainService, catalog_db)
+        servant = Catalog(main_service, catalog_db)
 
-        catalogAdapter = broker.createObjectAdapter("CatalogAdapter")
-        catalogPrx = catalogAdapter.add(servant, broker.stringToIdentity("CatalogService"))
+        catalog_adapter = broker.createObjectAdapter("CatalogAdapter")
+        catalog_prx = catalog_adapter.add(
+            servant, broker.stringToIdentity("CatalogService"))
 
-        mainService.register(catalogPrx)        
+        main_service.register(catalog_prx)
 
-        catalogAdapter.activate()
+        catalog_adapter.activate()
         self.shutdownOnInterrupt()
         broker.waitForShutdown()
 
         return 0
+
 
 sys.exit(CatalogServer().main(sys.argv))
