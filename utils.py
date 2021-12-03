@@ -19,11 +19,6 @@ ICEFLIX_BANNER = """
 class CatalogDB():
     def __init__(self, database):
         self.database = database
-        # self._connection = self._create_connection(database)
-        # self._connection.row_factory = lambda cursor, row: row[0]
-        # self._cursor = self._connection.cursor()
-        # if self._connection is not None:
-        #     self._create_table()
 
     def _create_connection(self, database_file):
         conn = None
@@ -36,8 +31,15 @@ class CatalogDB():
             print(e)
 
         return conn
+        
+    def _drop_table(self):
+        drop_table_sql = 'DROP TABLE IF EXISTS catalog'
+        with self._create_connection(self.database) as conn:
+            cursor = conn.cursor()
+            cursor.execute(drop_table_sql)
+        conn.close()
 
-    def _create_table(self):
+    def create_table(self):
         create_table_sql = 'CREATE TABLE IF NOT EXISTS catalog (id text PRIMARY KEY,initialName text NOT NULL);'
         with self._create_connection(self.database) as conn:
             cursor = conn.cursor()
@@ -74,10 +76,10 @@ class CatalogDB():
 
     def getIdByName(self, name, exact):
         if exact:
-            getIdByName_sql = f"SELECT id FROM catalog WHERE initialName='{name}'"
+            getIdByName_sql = f"SELECT id FROM catalog WHERE initialName='{name}' COLLATE NOCASE"
 
         else:
-            getIdByName_sql = f"SELECT id FROM catalog WHERE initialName LIKE '%{name}%'"
+            getIdByName_sql = f"SELECT id FROM catalog WHERE initialName LIKE '%{name}%' COLLATE NOCASE"
 
         with self._create_connection(self.database) as conn:
             cursor = conn.cursor()
@@ -94,7 +96,7 @@ class CatalogDB():
         return result
 
     def renameMedia(self, id, name):
-        renameMedia_sql = f"UPDATE catalog SET initialName={name} WHERE id={id}"
+        renameMedia_sql = f"UPDATE catalog SET initialName='{name}' WHERE id='{id}'"
         with self._create_connection(self.database) as conn:
             cursor = conn.cursor()
             cursor.execute(renameMedia_sql)

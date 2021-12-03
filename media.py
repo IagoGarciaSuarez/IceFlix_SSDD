@@ -9,6 +9,6 @@ class Media(IceFlix.Media):
         self.info = info
 
 class MediaInfo(IceFlix.MediaInfo):
-    def __init__(self, name, tags):
+    def __init__(self, name, tags=[]):
         self.name = name
         self.tags = tags

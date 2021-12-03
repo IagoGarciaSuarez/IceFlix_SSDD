@@ -15,13 +15,21 @@ class StreamProvider(IceFlix.StreamProvider):
         self._catalogService = catalogService
         self._prx = providerAdapter
 
-    def getStream(self, current=None):
-        #No funciona, falta claridad en la definición de esta función.
-        #current es none
-        #controllerAdapter = self.broker.createObjectAdapter('StreamController')
-        controllerPrx = self._prx.addWithUUID(self)
+    def getStream(self, id, userToken, current=None):
+        auth = self._mainService.getAuthenticator()
 
-        return IceFlix.StreamProviderPrx.checkedCast(controllerPrx)
+        if not auth.isAuthorized(userToken):
+            raise IceFlix.Unauthorized
+
+        mediaFilesList = listFiles(SERVER_MEDIA_DIR)
+
+        for media in mediaFilesList:
+            if getSHA256(SERVER_MEDIA_DIR + media) == id:
+                servant = StreamController(userToken, self._mainService)
+                controllerPrx = current.adapter.addWithUUID(servant)
+                return IceFlix.StreamControllerPrx.checkedCast(controllerPrx)
+        
+        raise IceFlix.WrongMediaId(id)
 
     def isAvailable(self, id, current=None):
         for media in listFiles(SERVER_MEDIA_DIR):
@@ -42,12 +50,19 @@ class StreamProvider(IceFlix.StreamProvider):
             raise IceFlix.Unauthorized
 
         if not removeFile(id):
-            #No debería borrar también la entrada del catálogo y del almacén de proxies?
             raise IceFlix.WrongMediaId
 
 class StreamController(IceFlix.StreamController):
+    def __init__(self, userToken, mainService):
+        self._userToken = userToken
+        self._mainService = mainService
+
     def getSDP(self, userToken, port, current=None):
-        pass
+        auth = self._mainService.getAuthenticator()
+
+        if not auth.isAuthorized(userToken):
+            raise IceFlix.Unauthorized
+        
 
     def stop(self, current=None):
         pass
@@ -80,14 +95,16 @@ class StreamServer(Ice.Application):
 
 
         providerAdapter = broker.createObjectAdapter("ProviderAdapter")
-        #servant = StreamProvider(mainService, catalogService, providerAdapter)
+        servant = StreamProvider(mainService, catalogService, providerAdapter)
 
-        #providerPrx = providerAdapter.add(servant, broker.stringToIdentity("ProviderService"))
+        providerPrx = providerAdapter.add(servant, broker.stringToIdentity("ProviderService"))
+        providerAdapter.activate()
 
         mediaFilesList = listFiles(SERVER_MEDIA_DIR)
+        provider = IceFlix.StreamProviderPrx.checkedCast(providerPrx)
         for media in mediaFilesList:
             catalogService.updateMedia(getSHA256(SERVER_MEDIA_DIR + media),
-                                        splitext(media)[0], providerAdapter)
+                                        splitext(media)[0], provider)
 
         providerAdapter.activate()
         self.shutdownOnInterrupt()

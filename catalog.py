@@ -24,8 +24,8 @@ class Catalog(IceFlix.MediaCatalog):
     def updateMedia(self, id, initialName, provider, current=None): 
         if not self._catalog.isInCatalog(id):
             self._catalog.addMedia(id, initialName)
-            self._mediaWithProxy[id] = []
         
+        self._mediaWithProxy[id] = []
         self._mediaWithProxy[id].append(provider)
 
     def addTags(self, id, tags, userToken, current=None):
@@ -39,9 +39,15 @@ class Catalog(IceFlix.MediaCatalog):
 
         #Needs change if tags is not passed as a List object
         tagsDB = readTagsDB()
-
-        for tag in tags:
-            tagsDB[auth.whois(userToken)][id].append(tag)
+        username = auth.whois(userToken)
+        
+        if username in tagsDB:
+            for tag in tags:
+                tagsDB[username][id].append(tag)
+        else:
+            tags_dic = {}
+            tags_dic[id] = tags
+            tagsDB[username] = tags_dic
 
         writeTagsDB(tagsDB)
 
@@ -55,12 +61,11 @@ class Catalog(IceFlix.MediaCatalog):
             raise IceFlix.WrongMediaId(id)
         
         user = auth.whois(userToken)
-        #Needs change if tags is not passed as a List object
         tagsDB = readTagsDB()
         tagsDB[user][id] = [t for t in tagsDB[user][id] if t not in tags]
         tagsDB = writeTagsDB(tagsDB)
 
-    def renameTile(self, id, name, adminToken):
+    def renameTile(self, id, name, adminToken, current=None):
         if not self._mainService.isAdmin(adminToken):
             raise IceFlix.Unauthorized
 
@@ -78,11 +83,13 @@ class Catalog(IceFlix.MediaCatalog):
 
         tagsDB = readTagsDB()
         for user in tagsDB:
-            for media in tagsDB[user]:
-                tags = [tag for tag in tags for tags in tagsDB[media]]
-        #Check struct media object
+            if id in tagsDB[user]:
+                tagList = [tag for tag in tagsDB[user][id]]
+            else:
+                tagList = []
+                
         return Media(id, self._mediaWithProxy[id][-1], 
-                MediaInfo(self._catalog.getNameById(id), tags))
+                MediaInfo(self._catalog.getNameById(id), tagList))
 
     def getTilesByName(self, name, exact, current=None):        
         tilesList = self._catalog.getIdByName(name, exact)
@@ -90,11 +97,13 @@ class Catalog(IceFlix.MediaCatalog):
             return tilesList
         return []
         
-    def getTilesbyTags(self, tags, includeAllTags, userToken):
+    def getTilesByTags(self, tags, includeAllTags, userToken, current=None):
         auth = self._mainService.getAuthenticator()
 
         if not auth.isAuthorized(userToken):
-            raise IceFlix.Unauthorized
+            #raise IceFlix.Unauthorized
+            print('NO AUTORIZADO')
+            return
         
         tagsDB = readTagsDB()
         user = auth.whois(userToken)
@@ -119,6 +128,7 @@ class CatalogServer(Ice.Application):
             raise RuntimeError('Invalid proxy for the main service')
 
         catalog_db = CatalogDB('catalog.db')
+        catalog_db.create_table()
 
         servant = Catalog(mainService, catalog_db)
 
