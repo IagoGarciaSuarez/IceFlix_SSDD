@@ -15,28 +15,24 @@ try:
 except ImportError:
     logging.warning('python-vlc required for player!')
 
+
 # pylint: disable=C0301
-TEST_PIPE = 'videotestsrc ! openh264enc ! rtph264pay config-interval=10 pt=96 ! udpsink host={} port={}'
-FILE_PIPE = 'filesrc location="{}" ! decodebin ! openh264enc ! rtph264pay config-interval=10 pt=96 ! udpsink host={} port={}'
-SDP_DATA = '''v=0
-m=video {} RTP/AVP 96
-c=IN IP4 {}
-a=rtpmap:96 H264/90000
-'''
+TEST_PIPE = 'videotestsrc ! x264enc ! h264parse config-interval=5 ! mpegtsmux ! rtpmp2tpay ! udpsink host={} port={}'
+FILE_PIPE = 'filesrc location="{}" ! decodebin ! x264enc ! h264parse config-interval=5 ! mpegtsmux ! rtpmp2tpay ! udpsink host={} port={}'
 # pylint: enable=C0301
 
 
 class RTSPEmitter:
     '''Handling RTSP streaming to a given destination'''
     def __init__(self, media_file, dest_host, dest_port):
+        self._host_ = dest_host
+        self._port_ = dest_port
         if (media_file is None) or not os.path.exists(media_file):
             logging.warning('No media file found! Use test signal')
-            self._pipe_ = TEST_PIPE.format(dest_host, dest_port)
+            self._pipe_ = TEST_PIPE.format(self._host_, self._port_)
         else:
-            self._pipe_ = FILE_PIPE.format(media_file, dest_host, dest_port)
+            self._pipe_ = FILE_PIPE.format(media_file, self._host_, self._port_)
         logging.debug('GST Pipe: %s', self._pipe_)
-        self._sdp_ = SDP_DATA.format(dest_port, dest_host)
-        logging.debug('SDP Data: %s', self._sdp_)
         self._proc_ = None
 
     def start(self):
@@ -52,21 +48,20 @@ class RTSPEmitter:
         self._proc_.wait()
 
     @property
-    def sdp(self):
-        '''Get SDP data'''
-        return self._sdp_
+    def playback_uri(self):
+        '''Get playback URI'''
+        return f'rtp://@{self._host_}:{self._port_}'
 
 
 class RTSPPlayer:
     '''RTSP player using SDP file'''
-    def __init__(self):
-        self._vlc_ = vlc.Instance()
+    def __init__(self, debug_mode=False):
+        self._vlc_ = vlc.Instance('--verbose 3' if debug_mode else '')
         self._player_ = self._vlc_.media_player_new()
 
-    def play(self, sdp_file):
-        '''Start playing SDP file (in a separated window)'''
-        media = self._vlc_.media_new(sdp_file)
-        media.get_mrl()
+    def play(self, media_uri):
+        '''Start playing media URI (in a separated window)'''
+        media = self._vlc_.media_new(media_uri)
         self._player_.set_media(media)
         self._player_.play()
 
@@ -80,19 +75,16 @@ if __name__ == '__main__':
     import time
     import tempfile
 
-    # Stream test signal (filename is None)
-    emitter = RTSPEmitter(None, '127.0.0.1', 60606)
-    emitter.start()
+    logging.basicConfig(level=logging.DEBUG)
 
-    # Create temporal file with SDP data as contents
-    # Extension should be ".sdp" to work with libVLC
-    tmp_file = tempfile.NamedTemporaryFile(mode='wt', suffix='.sdp', delete=False)
-    tmp_file.write(emitter.sdp)
-    tmp_file.close()
+    # Stream test signal (filename is None)
+    #emitter = RTSPEmitter(<video file>, '127.0.0.1', 5000)
+    emitter = RTSPEmitter('server_media/Mosca amarilla pica a pupo tonto.mp4', '127.0.0.1', 5000)
+    emitter.start()
 
     # PLay SDP file with VLC
     player = RTSPPlayer()
-    player.play(tmp_file.name)
+    player.play(emitter.playback_uri)
 
     # Stream for 10 seconds
     time.sleep(10.0)
@@ -100,6 +92,3 @@ if __name__ == '__main__':
     # Stop player and streamer
     player.stop()
     emitter.stop()
-
-    # Remove unused SDP file
-    os.remove(tmp_file.name)

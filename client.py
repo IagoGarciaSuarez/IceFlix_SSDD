@@ -99,9 +99,9 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
         ('login - Inicia sesión una vez indicado un usuario y contraseña correctos.'
          ' Se puede iniciar sesión como administrador utilizando el comando adminlogin.')
         if not self.logged:
-            self.username = input('Nombre de usuario:')
-            self.password_hash = getPasswordSHA256(getpass('Contraseña:'))
             try:
+                self.username = input('Nombre de usuario:')
+                self.password_hash = getPasswordSHA256(getpass('Contraseña:'))
                 self.user_token = self.client.auth_service.refreshAuthorization(
                     self.username, self.password_hash)
                 self.logged = True
@@ -109,6 +109,9 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
                 self.prompt = f'{self.username}> '
             except IceFlix.Unauthorized:
                 print('\n[ERROR] Error al introducir las credenciales.\n')
+            except EOFError:
+                print()
+                return
         else:
             print(
                 f'\n[ERROR] Ya existe una sesión iniciada por {self.username}.\n')
@@ -116,7 +119,11 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
     def do_adminlogin(self, initial=None): # pylint: disable=unused-argument
         'adminlogin - Inicia sesión de administrador una vez indicado un admin token correcto.\n'
         if not self.logged:
-            self.user_token = input('Token de administrador: ')
+            try:
+                self.user_token = input('Token de administrador: ')
+            except EOFError:
+                print()
+                return
             if self.client.main_service.isAdmin(self.user_token):
                 self.logged = True
                 self.admin = True
@@ -264,6 +271,10 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
             print('\n[ERROR] Es necesario indicar un nuevo nombre.\n')
             return
 
+        if not self.admin:
+            print('\n[ERROR] Para realizar esta operación debe ser un administrador.\n')
+            return
+
         newname = arg.strip()
 
         if not self.selected_media:
@@ -378,9 +389,50 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
                 f'\n[ERROR] ID de medio {media_id} no encontrado en el catálogo.\n')
             return
 
+    def do_adduser(self, initial=None):
+        ('adduser - Asks for a username and a password and then add the user to the users '
+         'database.\n')
+        if not self.admin:
+            print('\n[ERROR] Para realizar esta operación debe ser un administrador.\n')
+            return
+        try:
+            username = input('Nombre del nuevo usuario: ')
+            password_hash = getPasswordSHA256(getpass('Contraseña del nuevo usuario: '))
+            self.client.auth_service.addUser(username, password_hash, self.user_token)
+            print('\n[INFO] Usuario añadido correctamente.\n')
+        except IceFlix.Unauthorized:
+            print('\n[ERROR] Token de administrador no válido.\n')
+        except EOFError:
+            print()
+            return
+    
+    def do_removeuser(self, arg, initial=None):
+        'removeuser <username> - Removes the user from the database.'
+        if not self.admin:
+            print('\n[ERROR] Para realizar esta operación debe ser un administrador.\n')
+            return
+
+        if not arg:
+            print(
+                '\n[ERROR] Debe indicar un nombre de usuario. Escribe \'help removeuser\' ' +
+                'para más información.\n')
+            return
+
+        username = arg.strip()
+        
+        try:
+            self.client.auth_service.removeuser(username, self.user_token)
+            print(f'\n[INFO] Se ha elimiado el usuario \'{username}\' con éxito.\n')
+        except IceFlix.Unauthorized:
+            print(
+                '\n[ERROR] No es un administrador o no se ha encontrado ' +
+                f'el usuario \'{username}\'.\n')
+            return
+
     def do_q(self, initial=None): # pylint: disable=unused-argument
         'q - Cierra el cliente de IceFlix.\n'
-        self.do_logout()
+        if self.logged:
+            self.do_logout()
         return True
 
     def start(self):
