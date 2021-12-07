@@ -62,6 +62,7 @@ de un único medio para realizar las pruebas, que se llama "Perro cachorro.mp4".
 El comando de búsqueda tiene 4 distintas variantes según el modo de búsqueda deseado.
 Podemos ver la descripción de cada una escribiendo
   - >help search
+  
 Para este caso, utilizaremos la búsqueda por nombre no exacto:
   - >search 2 Perro
 6. Deberíamos obtener la información del medio, entre la que se ve el ID. La búsqueda
