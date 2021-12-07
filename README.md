@@ -62,8 +62,8 @@ de un único medio para realizar las pruebas, que se llama "Perro cachorro.mp4".
 El comando de búsqueda tiene 4 distintas variantes según el modo de búsqueda deseado.
 Podemos ver la descripción de cada una escribiendo
   - >help search
-  
-Para este caso, utilizaremos la búsqueda por nombre no exacto:
+
+  Para este caso, utilizaremos la búsqueda por nombre no exacto:
   - >search 2 Perro
 6. Deberíamos obtener la información del medio, entre la que se ve el ID. La búsqueda
 por nombre (opciones 1 y 2) se puede realizar sin iniciar sesión, pero los siguientes
@@ -78,6 +78,7 @@ deberá escribir el comando:
 9. Si queremos cambiarle el nombre deberemos estar loggeados como administrador. En
 caso de que se haya iniciado una sesión de usuario podremos cerrarla escribiendo:
   - >logout
+
 Una vez seamos administradores y volvamos a tener el medio seleccionado, podremos 
 renombrar el medio por ejemplo, a Perro pequeño, escribiendo:
   - >rename Perro pequeño
