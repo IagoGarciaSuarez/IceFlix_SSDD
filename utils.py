@@ -1,5 +1,5 @@
 import sqlite3
-from os import listdir, remove, rename
+from os import listdir, remove
 from os.path import isfile, join
 import hashlib
 import json

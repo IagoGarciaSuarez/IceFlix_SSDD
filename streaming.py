@@ -5,8 +5,8 @@ Archivo que implementa las clases correspondientes al servicio de streaming.
 '''
 import sys
 from os.path import splitext, isfile, getsize
-from iceflixrtsp import RTSPEmitter
 import Ice
+from iceflixrtsp import RTSPEmitter
 import utils
 Ice.loadSlice('iceflix.ice')
 import IceFlix # pylint: disable=import-error,wrong-import-position
@@ -40,11 +40,11 @@ class StreamProvider(IceFlix.StreamProvider):
                 return True
         return False
 
-    def uploadMedia(self, file_name, uploader, admin_token, current=None): # pylint: disable=unused-argument
+    def uploadMedia(self, file_name, uploader, admin_token, current=None): # pylint: disable=unused-argument, invalid-name
         '''Sube un medio al servidor.'''
         if not self._main_service.isAdmin(admin_token):
             raise IceFlix.Unauthorized
-        
+
         file_origin_route = utils.CLIENT_MEDIA_DIR + file_name
         file_dest_route = utils.SERVER_MEDIA_DIR + file_name
 
@@ -64,7 +64,7 @@ class StreamProvider(IceFlix.StreamProvider):
 
                 out.write(chunk)
                 print(
-                    f'\r\033[KDownloading {count}/{filesize} bytes... {next(utils.SPINNER)}', 
+                    f'\r\033[KDownloading {count}/{filesize} bytes... {next(utils.SPINNER)}',
                     end='')
                 count += len(chunk)
 
@@ -130,7 +130,7 @@ class StreamServer(Ice.Application):
 
         provider_prx = provider_adapter.add(
             servant, broker.stringToIdentity("ProviderService"))
-        provider_adapter.activate()        
+        provider_adapter.activate()
 
         media_files_list = utils.listFiles(utils.SERVER_MEDIA_DIR)
         provider = IceFlix.StreamProviderPrx.checkedCast(provider_prx)

@@ -105,7 +105,7 @@ class Catalog(IceFlix.MediaCatalog):
 
         if not auth.isAuthorized(user_token):
             raise IceFlix.Unauthorized
-            
+
         tags_db = readTagsDB()
         user = auth.whois(user_token)
         tiles_list = []
