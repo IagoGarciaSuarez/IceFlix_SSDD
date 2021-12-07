@@ -11,7 +11,7 @@ CHUNK_SIZE = 4094
 SPINNER = itertools.cycle(['|', '/', '-', '\\'])
 TAGS_DB = 'persistence/tagsDB.json'
 CREDENTIALS_DB = 'persistence/credentials.json'
-CATALOG_DB = 'persistence/catalog.db'
+DATABASE_PATH = 'persistence/'
 ICEFLIX_BANNER = """
   ___         _____ _ _      
  |_ _|___ ___|  ___| (_)_  __
@@ -23,7 +23,7 @@ ICEFLIX_BANNER = """
 
 class CatalogDB():
     def __init__(self, database):
-        self.database = database
+        self.database = DATABASE_PATH + database
 
     def _create_connection(self, database_file):
         conn = None
