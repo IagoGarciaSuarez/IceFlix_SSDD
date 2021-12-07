@@ -60,7 +60,8 @@ el nombre o las tags o para reproducirlo. Para ello necesitaremos el id del medi
 que podremos encontrar al realizar una búsqueda. En este repositorio se dispone
 de un único medio para realizar las pruebas, que se llama "Perro cachorro.mp4".
 El comando de búsqueda tiene 4 distintas variantes según el modo de búsqueda deseado.
-Podemos ver la descripción de cada una escribiendo >help search
+Podemos ver la descripción de cada una escribiendo
+  - >help search
 Para este caso, utilizaremos la búsqueda por nombre no exacto:
   - >search 2 Perro
 6. Deberíamos obtener la información del medio, entre la que se ve el ID. La búsqueda
@@ -87,7 +88,8 @@ Con el medio seleccionado, tendremos dos opciones según lo que queramos hacer:
   - Eliminar tags. Eliminaremos la tag "Relax" añadida previamente:
     > removetags Relax
 
-Para cerrar el cliente puede utilizar el comando >q
+Para cerrar el cliente puede utilizar el comando 
+  - >q
 
 Para más comandos, el comando "help" mostrará todos los comandos disponibles, y con
 "help \<comando\>" se mostrará una descripción más detallada sobre el comando indicado.
