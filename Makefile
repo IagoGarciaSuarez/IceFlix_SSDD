@@ -17,7 +17,7 @@ run-streaming:
 		./streaming.py --Ice.Config=configurations/Provider.config '$(shell head -1 proxy.out)'
 
 run-client:
-		./client.py '$(shell head -1 proxy.out)'
+		./client.py
 
 clean:
 		$(RM) *~ proxy.out
