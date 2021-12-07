@@ -39,23 +39,34 @@ class IceFlixClient: # pylint: disable=too-few-public-methods
         # self._iceflix = None
         # self._media = None
 
-    def run(self, argv):
+    def run(self, mainprx):
         '''Main de IceFlixClient'''
-        main_proxy = self._communicator.stringToProxy(argv[1])
-        self.main_service = IceFlix.MainPrx.checkedCast(main_proxy)
+        main_proxy = self._communicator.stringToProxy(mainprx)
+
+        for intento in range(3):
+            try:
+                self.main_service = IceFlix.MainPrx.checkedCast(main_proxy)
+                print('\n[INFO] Servicio IceFlix conectado.\n')
+                break
+            except Ice.NoEndpointException:
+                print('\n[ERROR] No se ha podido conectar con el servicio IceFlix indicado.\n')
+                for sec in range(10, 0, -1):
+                    print(
+                        f'[ERROR] Reintentando en {sec} segundos. [{intento+1}/3]', end='\r')
+                    time.sleep(1)
 
         if not self.main_service:
-            raise RuntimeError('[ERROR] Invalid proxy for the main service')
+            raise RuntimeError('\n[ERROR] Invalid proxy for the main service.\n')
 
         for intento in range(3):
             try:
                 self.auth_service = self.main_service.getAuthenticator()
-                print('[INFO] Servicio de autenticación conectado.\n')
+                print('\n[INFO] Servicio de autenticación conectado.\n')
                 break
 
             except IceFlix.TemporaryUnavailable:
                 print(
-                    '[ERROR] Ha ocurrido un error al conectar con el servicio de autenticación.\n')
+                    '\n[ERROR] Ha ocurrido un error al conectar con el servicio de autenticación.\n')
                 for sec in range(10, 0, -1):
                     print(
                         f'[ERROR] Reintentando en {sec} segundos. [{intento+1}/3]', end='\r')
@@ -64,12 +75,12 @@ class IceFlixClient: # pylint: disable=too-few-public-methods
         for intento in range(3):
             try:
                 self.catalog_service = self.main_service.getCatalog()
-                print('[INFO] Servicio de catálogo conectado.\n')
+                print('\n[INFO] Servicio de catálogo conectado.\n')
                 break
 
             except IceFlix.TemporaryUnavailable:
                 print(
-                    '[ERROR] Ha ocurrido un error al conectar con el servicio de catálogo.\n')
+                    '\n[ERROR] Ha ocurrido un error al conectar con el servicio de catálogo.\n')
                 for sec in range(10, 0, -1):
                     print(
                         f'[ERROR] Reintentando en {sec} segundos. [{intento+1}/3]', end='\r')
@@ -89,7 +100,10 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
 
     prompt = '> '
     intro = ICEFLIX_BANNER + \
-        '\nEscribe \'help\' o \'?\' para mostrar los comandos disponibles.\n'
+        '\nEscribe \'help\' o \'?\' para mostrar los comandos disponibles.\nEscribe ' + \
+        '\'iniciar <main server proxy>\' indicando el proxy del servicio IceFlix principal al ' + \
+        'que quieres conectarte.\n'
+    iniciado = False
     username = None
     password_hash = None
     user_token = None
@@ -97,30 +111,60 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
     admin = False
     selected_media = None
     
+    def do_iniciar(self, arg, initial=None):
+        'iniciar <proxy> - Se conecta a un servicio IceFlix para comenzar a utilizar la plataforma.'
+        if self.iniciado:
+            print('\n[ERROR] Servicio IceFlix ya conectado. Puede cerrarlo escribiendo \'q\'.\n')
+            return
+        
+        if not arg:
+            print('\n[ERROR] Se debe indicar un proxy.\n')
+            return
+        
+        mainprx = arg.replace('\'', '').replace('\"', '').strip()
+        try:
+            self.client.run(mainprx)
+        except Exception:
+            print('\n[ERROR] No se ha podido conectar con el servicio IceFlix.\n')
+            return
+
+        self.iniciado = True
 
     def do_login(self, initial=None): # pylint: disable=unused-argument
         ('login - Inicia sesión una vez indicado un usuario y contraseña correctos.'
          ' Se puede iniciar sesión como administrador utilizando el comando adminlogin.')
-        if not self.logged:
-            try:
-                self.username = input('Nombre de usuario:')
-                self.password_hash = getPasswordSHA256(getpass('Contraseña:'))
-                self.user_token = self.client.auth_service.refreshAuthorization(
-                    self.username, self.password_hash)
-                self.logged = True
-                print('\n[INFO] Se ha iniciado sesión correctamente.\n')
-                self.prompt = f'{self.username}> '
-            except IceFlix.Unauthorized:
-                print('\n[ERROR] Error al introducir las credenciales.\n')
-            except EOFError:
-                print()
-                return
-        else:
+
+        if not self.iniciado:
             print(
-                f'\n[ERROR] Ya existe una sesión iniciada por {self.username}.\n')
+                '\n[ERROR] No se ha conectado a ningún servicio. ' +
+                'Escriba \'help iniciar\' para más información.\n')
+            return
+
+        if self.logged:
+            print(f'\n[ERROR] Ya existe una sesión iniciada por {self.username}.\n')     
+            return 
+
+        try:
+            self.username = input('Nombre de usuario:')
+            self.password_hash = getPasswordSHA256(getpass('Contraseña:'))
+            self.user_token = self.client.auth_service.refreshAuthorization(
+                self.username, self.password_hash)
+            self.logged = True
+            print('\n[INFO] Se ha iniciado sesión correctamente.\n')
+            self.prompt = f'{self.username}> '
+        except IceFlix.Unauthorized:
+            print('\n[ERROR] Error al introducir las credenciales.\n')
+        except EOFError:
+            print()
 
     def do_adminlogin(self, initial=None): # pylint: disable=unused-argument
         'adminlogin - Inicia sesión de administrador una vez indicado un admin token correcto.\n'
+        if not self.iniciado:
+            print(
+                '\n[ERROR] No se ha conectado a ningún servicio. ' +
+                'Escriba \'help iniciar\' para más información.\n')
+            return
+
         if not self.logged:
             try:
                 self.user_token = input('Token de administrador: ')
@@ -144,6 +188,12 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
 
     def do_logout(self, initial=None): # pylint: disable=unused-argument
         'logout - Cierra sesión si hay una iniciada.\n'
+        if not self.iniciado:
+            print(
+                '\n[ERROR] No se ha conectado a ningún servicio. ' +
+                'Escriba \'help iniciar\' para más información.\n')
+            return
+
         if self.logged:
             self.username = None
             self.password_hash = None
@@ -164,6 +214,12 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
                     4 - Búsqueda por tags incluídas (es necesario iniciar sesión).
                     *Las tags se indicarán separadas por \',\'.
         '''
+        if not self.iniciado:
+            print(
+                '\n[ERROR] No se ha conectado a ningún servicio. ' +
+                'Escriba \'help iniciar\' para más información.\n')
+            return
+            
         argv = arg.split(' ', 1)
         if len(argv) < 2:
             print(
@@ -198,6 +254,12 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
 
     def do_lastsearch(self, initial=None): # pylint: disable=unused-argument
         'lastsearch - Muestra los resultados de la última búsqued realizada.\n'
+        if not self.iniciado:
+            print(
+                '\n[ERROR] No se ha conectado a ningún servicio. ' +
+                'Escriba \'help iniciar\' para más información.\n')
+            return
+
         if self._last_results_:
             for i, media_id in zip(range(len(self._last_results_)), self._last_results_):
                 try:
@@ -228,6 +290,12 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
     def do_select(self, arg, initial=None): # pylint: disable=unused-argument
         ('select <media_id> - Indicando el ID de un medio disponible, se selecciona dicho medio '
          'para poder realizar operaciones con él.\n')
+        if not self.iniciado:
+            print(
+                '\n[ERROR] No se ha conectado a ningún servicio. ' +
+                'Escriba \'help iniciar\' para más información.\n')
+            return
+        
         if not self.user_token:
             print(
                 '\n[ERROR] Para realizar esta operación debe iniciar sesión antes.\n')
@@ -261,6 +329,12 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
 
     def do_unselect(self, initial=None): # pylint: disable=unused-argument
         'unselect - Desselecciona el elemento seleccionado.\n'
+        if not self.iniciado:
+            print(
+                '\n[ERROR] No se ha conectado a ningún servicio. ' +
+                'Escriba \'help iniciar\' para más información.\n')
+            return
+        
         if not self.user_token:
             print(
                 '\n[ERROR] Para realizar esta operación debe iniciar sesión antes.\n')
@@ -271,6 +345,12 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
     def do_rename(self, arg, initial=None): # pylint: disable=unused-argument
         ('rename <nuevo nombre> - Cambia el nombre de un medio por el valor <nuevo nombre>. '
          'Operación de administrador.\n')
+        if not self.iniciado:
+            print(
+                '\n[ERROR] No se ha conectado a ningún servicio. ' +
+                'Escriba \'help iniciar\' para más información.\n')
+            return
+        
         if not arg:
             print('\n[ERROR] Es necesario indicar un nuevo nombre.\n')
             return
@@ -319,6 +399,12 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
                 *La lista de tags se indicará escribiendo las tags separadas por \',\'.
                 **El nombre de los tags es sensible a mayúsculas.
         '''
+        if not self.iniciado:
+            print(
+                '\n[ERROR] No se ha conectado a ningún servicio. ' +
+                'Escriba \'help iniciar\' para más información.\n')
+            return
+        
         if not self.user_token:
             print(
                 '\n[ERROR] Para realizar esta operación debe iniciar sesión antes.\n')
@@ -358,6 +444,12 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
                 *La lista de tags se indicará escribiendo las tags separadas por \',\'.
                 **El nombre de los tags es sensible a mayúsculas.
         '''
+        if not self.iniciado:
+            print(
+                '\n[ERROR] No se ha conectado a ningún servicio. ' +
+                'Escriba \'help iniciar\' para más información.\n')
+            return
+        
         if not self.user_token:
             print(
                 '\n[ERROR] Para realizar esta operación debe iniciar sesión antes.\n')
@@ -396,6 +488,12 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
     def do_adduser(self, initial=None):
         ('adduser - Asks for a username and a password and then add the user to the users '
          'database.\n')
+        if not self.iniciado:
+            print(
+                '\n[ERROR] No se ha conectado a ningún servicio. ' +
+                'Escriba \'help iniciar\' para más información.\n')
+            return
+        
         if not self.admin:
             print('\n[ERROR] Para realizar esta operación debe ser un administrador.\n')
             return
@@ -412,6 +510,12 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
     
     def do_removeuser(self, arg, initial=None):
         'removeuser <username> - Removes the user from the database.'
+        if not self.iniciado:
+            print(
+                '\n[ERROR] No se ha conectado a ningún servicio. ' +
+                'Escriba \'help iniciar\' para más información.\n')
+            return
+        
         if not self.admin:
             print('\n[ERROR] Para realizar esta operación debe ser un administrador.\n')
             return
@@ -435,6 +539,12 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
 
     def do_play(self, initial=None): # pylint: disable=unused-argument
         'play - Inicia la reproducción del medio seleccionado.\n'
+        if not self.iniciado:
+            print(
+                '\n[ERROR] No se ha conectado a ningún servicio. ' +
+                'Escriba \'help iniciar\' para más información.\n')
+            return
+        
         if not self.user_token:
             print(
                 '\n[ERROR] Para realizar esta operación debe iniciar sesión antes.\n')
@@ -470,6 +580,12 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
 
     def do_stop(self, initial=None): # pylint: disable=unused-argument
         'stop - Para la reproducción actual si hay alguna en marcha.\n'
+        if not self.iniciado:
+            print(
+                '\n[ERROR] No se ha conectado a ningún servicio. ' +
+                'Escriba \'help iniciar\' para más información.\n')
+            return
+        
         if not self.client.player:
             print('\n[ERROR] No hay ninguna reproducción en curso.\n')
             return
@@ -507,7 +623,6 @@ class Client(Ice.Application):
     def run(self, argv): # pylint: disable=arguments-differ
         shell = IceFlixCLI()
         shell.client = IceFlixClient(self.communicator())
-        shell.client.run(argv)
         self.shutdownOnInterrupt()
         shell.start()
 
