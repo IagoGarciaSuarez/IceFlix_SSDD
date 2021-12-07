@@ -3,8 +3,8 @@ Ice.loadSlice('iceflix.ice')
 import IceFlix
 
 class Media(IceFlix.Media):
-    def __init__(self, id, provider, info):
-        self.id = id
+    def __init__(self, mediaId, provider, info):
+        self.mediaId = mediaId
         self.provider = provider
         self.info = info
 

@@ -14,6 +14,7 @@ import time
 import cmd
 
 from getpass import getpass
+from iceflixrtsp import RTSPPlayer
 import Ice  # pylint: disable=import-error,wrong-import-position
 from utils import getPasswordSHA256, ICEFLIX_BANNER
 Ice.loadSlice('iceflix.ice')
@@ -31,12 +32,12 @@ class IceFlixClient: # pylint: disable=too-few-public-methods
         self.main_service = None
         self.catalog_service = None
         self.auth_service = None
+        self.player = None
         # self._user = None
         # self._password_hash = None
         # self._iceflix_prx = None
         # self._iceflix = None
         # self._media = None
-        # self._player = None
 
     def run(self, argv):
         '''Main de IceFlixClient'''
@@ -84,6 +85,7 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
             completekey='tab', stdin=stdin, stdout=stdout)
         self.client = None
         self._last_results_ = {}
+        self._controller = None
 
     prompt = '> '
     intro = ICEFLIX_BANNER + \
@@ -94,6 +96,7 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
     logged = False
     admin = False
     selected_media = None
+    
 
     def do_login(self, initial=None): # pylint: disable=unused-argument
         ('login - Inicia sesión una vez indicado un usuario y contraseña correctos.'
@@ -169,6 +172,7 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
             return
 
         mode = argv[0].strip()
+        self._last_results_ = None
         if mode in ['1', '2']:
             name = argv[1].strip()
             self._last_results_ = self.client.catalog_service.getTilesByName(
@@ -200,7 +204,7 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
                     media_info = self.client.catalog_service.getTile(media_id)
                 except IceFlix.WrongMediaId as wmid:
                     print(
-                        f'\n[ERROR] No se ha encontrado el medio con id {wmid.id}\n')
+                        f'\n[ERROR] No se ha encontrado el medio con id {wmid.mediaId}\n')
                     return
                 except IceFlix.TemporaryUnavailable:
                     print(
@@ -240,7 +244,7 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
             self.selected_media = self.client.catalog_service.getTile(media_id)
         except IceFlix.WrongMediaId as wmid:
             print(
-                f'\n[ERROR] No se ha encontrado el medio con id \'{wmid.id}\'.\n')
+                f'\n[ERROR] No se ha encontrado el medio con id \'{wmid.mediaId}\'.\n')
             return
         except IceFlix.TemporaryUnavailable:
             print(
@@ -249,11 +253,11 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
         if self.admin:
             self.prompt = (
                 f'[ADMIN]\nSelección actual:'
-                f' {self.selected_media.id} ({self.selected_media.info.name})\n> ')
+                f' {self.selected_media.mediaId} ({self.selected_media.info.name})\n> ')
         else:
             self.prompt = (
                 f'Usuario: {self.username}\nSelección actual:'
-                f' {self.selected_media.id} ({self.selected_media.info.name})\n> ')
+                f' {self.selected_media.mediaId} ({self.selected_media.info.name})\n> ')
 
     def do_unselect(self, initial=None): # pylint: disable=unused-argument
         'unselect - Desselecciona el elemento seleccionado.\n'
@@ -285,18 +289,18 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
 
         try:
             self.client.catalog_service.renameTile(
-                self.selected_media.id, newname, self.user_token)
+                self.selected_media.mediaId, newname, self.user_token)
             self.selected_media = self.client.catalog_service.getTile(
-                self.selected_media.id)
+                self.selected_media.mediaId)
 
             if self.admin:
                 self.prompt = (
-                    f'[ADMIN]\nSelección actual: {self.selected_media.id} '
+                    f'[ADMIN]\nSelección actual: {self.selected_media.mediaId} '
                     f'({self.selected_media.info.name})\n> ')
             else:
                 self.prompt = (
                     f'Usuario: {self.username}\nSelección actual: '
-                    f'{self.selected_media.id} ({self.selected_media.info.name})\n> ')
+                    f'{self.selected_media.mediaId} ({self.selected_media.info.name})\n> ')
             print('\n[INFO] Título renombrado con éxito.\n')
         except IceFlix.Unauthorized:
             print(
@@ -304,7 +308,7 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
             return
         except IceFlix.WrongMediaId as wmid:
             print(
-                f'\n[ERROR] El medio con id {wmid.id} no está disponible en este momento.\n')
+                f'\n[ERROR] El medio con id {wmid.mediaId} no está disponible en este momento.\n')
             return
 
     def do_addtags(self, arg, initial=None): # pylint: disable=unused-argument
@@ -330,7 +334,7 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
                 'para más información.\n')
             return
 
-        media_id = self.selected_media.id
+        media_id = self.selected_media.mediaId
         tag_list = [tag.strip() for tag in arg.split(',')]
 
         try:
@@ -373,7 +377,7 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
                 'para más información.\n')
             return
 
-        media_id = self.selected_media.id
+        media_id = self.selected_media.mediaId
         tag_list = [tag.strip() for tag in arg.split(',')]
 
         try:
@@ -384,9 +388,9 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
             print(
                 '\n[ERROR] Token de usuario no válido. Es necesario iniciar sesión.\n')
             return
-        except IceFlix.WrongMediaId:
+        except IceFlix.WrongMediaId as wmid:
             print(
-                f'\n[ERROR] ID de medio {media_id} no encontrado en el catálogo.\n')
+                f'\n[ERROR] ID de medio {wmid.mediaId} no encontrado en el catálogo.\n')
             return
 
     def do_adduser(self, initial=None):
@@ -429,10 +433,58 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
                 f'el usuario \'{username}\'.\n')
             return
 
+    def do_play(self, initial=None): # pylint: disable=unused-argument
+        'play - Inicia la reproducción del medio seleccionado.\n'
+        if not self.user_token:
+            print(
+                '\n[ERROR] Para realizar esta operación debe iniciar sesión antes.\n')
+            return
+
+        if not self.selected_media:
+            print('\n[ERROR] Debe seleccionar antes un medio.\n')
+            return
+
+        if self.client.player:
+            print('\n[ERROR] Ya se está reproduciendo otro medio.\n')
+            return
+        
+        try:
+            self._controller = self.selected_media.provider \
+                .getStream(self.selected_media.mediaId, self.user_token)
+            rtsp_config = self._controller.getSDP(self.user_token, 5000)
+
+        except IceFlix.Unauthorized:
+            print(
+                '\n[ERROR] Token de usuario no válido. Es necesario iniciar sesión.\n')
+            return
+        except IceFlix.WrongMediaId as wmid:
+            print(
+                f'\n[ERROR] ID de medio {wmid.mediaId} no encontrado en el catálogo.\n')
+            return
+        
+        self.prompt = '[REPRODUCIENDO] ' + self.prompt
+        
+        self.client.player = RTSPPlayer()
+        self.client.player.play(rtsp_config)
+        print('Puede escribir \'stop\' para parar la reproducción del medio.\n')
+
+    def do_stop(self, initial=None): # pylint: disable=unused-argument
+        'stop - Para la reproducción actual si hay alguna en marcha.\n'
+        if not self.client.player:
+            print('\n[ERROR] No hay ninguna reproducción en curso.\n')
+            return
+
+        self.prompt = self.prompt.replace('[REPRODUCIENDO] ', '')
+        self.client.player.stop()
+        self._controller.stop()   
+        self.client.player = None
+
     def do_q(self, initial=None): # pylint: disable=unused-argument
         'q - Cierra el cliente de IceFlix.\n'
         if self.logged:
             self.do_logout()
+        if self.client.player:
+            self.do_stop()
         return True
 
     def start(self):

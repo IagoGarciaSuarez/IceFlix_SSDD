@@ -4,31 +4,30 @@
 Archivo que implementa las clases correspondientes al servicio de streaming.
 '''
 import sys
-from os.path import splitext
-import Ice # pylint: disable=import-error,wrong-import-position
-from utils import getSHA256, listFiles, removeFile, SERVER_MEDIA_DIR
+from os.path import splitext, isfile, getsize
+from iceflixrtsp import RTSPEmitter
+import Ice
+import utils
 Ice.loadSlice('iceflix.ice')
 import IceFlix # pylint: disable=import-error,wrong-import-position
 
 class StreamProvider(IceFlix.StreamProvider):
     '''Clase que implementa la interfaz de IceFlix para el stream provider.'''
-    def __init__(self, main_service, catalog_service, provider_adapter):
+    def __init__(self, main_service):
         self._main_service = main_service
-        self._catalog_service = catalog_service
-        self._prx = provider_adapter
 
-    def getStream(self, media_id, user_token, current=None):# pylint: disable=invalid-name
+    def getStream(self, media_id, user_token, current=None): # pylint: disable=invalid-name
         '''Comprueba que el token es válido y devuelve un objeto stream controller.'''
         auth = self._main_service.getAuthenticator()
 
         if not auth.isAuthorized(user_token):
             raise IceFlix.Unauthorized
 
-        media_files_list = listFiles(SERVER_MEDIA_DIR)
+        media_files_list = utils.listFiles(utils.SERVER_MEDIA_DIR)
 
         for media in media_files_list:
-            if getSHA256(SERVER_MEDIA_DIR + media) == media_id:
-                servant = StreamController(user_token, self._main_service)
+            if utils.getSHA256(utils.SERVER_MEDIA_DIR + media) == media_id:
+                servant = StreamController(user_token, self._main_service, media)
                 controller_prx = current.adapter.addWithUUID(servant)
                 return IceFlix.StreamControllerPrx.checkedCast(controller_prx)
 
@@ -36,34 +35,60 @@ class StreamProvider(IceFlix.StreamProvider):
 
     def isAvailable(self, media_id, current=None): # pylint: disable=invalid-name, unused-argument, no-self-use
         '''Comprueba si el medio está disponible.'''
-        for media in listFiles(SERVER_MEDIA_DIR):
-            if getSHA256(SERVER_MEDIA_DIR + media) == media_id:
+        for media in utils.listFiles(utils.SERVER_MEDIA_DIR):
+            if utils.getSHA256(utils.SERVER_MEDIA_DIR + media) == media_id:
                 return True
         return False
 
-    def uploadMedia(self, fileName, uploader, adminToken, current=None): # pylint: disable=invalid-name, unused-argument
+    def uploadMedia(self, file_name, uploader, admin_token, current=None): # pylint: disable=unused-argument
         '''Sube un medio al servidor.'''
-        if not self._main_service.isAdmin(adminToken):
+        if not self._main_service.isAdmin(admin_token):
             raise IceFlix.Unauthorized
+        
+        file_origin_route = utils.CLIENT_MEDIA_DIR + file_name
+        file_dest_route = utils.SERVER_MEDIA_DIR + file_name
 
-        # Implementar subida con MediaUploader
+        if not isfile(file_origin_route):
+            raise IceFlix.UploadError
 
-        raise IceFlix.UploadError
+        if isfile(file_dest_route):
+            raise IceFlix.UploadError
+
+        with open(file_dest_route, 'wb') as out:
+            count = 0
+            filesize = getsize(file_origin_route)
+            while True:
+                chunk = uploader.receive(utils.CHUNK_SIZE)
+                if not chunk:
+                    break
+
+                out.write(chunk)
+                print(
+                    f'\r\033[KDownloading {count}/{filesize} bytes... {next(utils.SPINNER)}', 
+                    end='')
+                count += len(chunk)
+
+            print(f'\r\033[KDownloading {count}/{filesize} bytes... {next(utils.SPINNER)}', end='')
+
+        uploader.close()
+        print('\n[UPLOADER] Transfer completed!')
 
     def deleteMedia(self, media_id, adminToken, current=None): # pylint: disable=invalid-name, unused-argument
         '''Elimina un medio dado su id si el token de administración es válido.'''
         if not self._main_service.isAdmin(adminToken):
             raise IceFlix.Unauthorized
 
-        if not removeFile(media_id):
+        if not utils.removeFile(media_id):
             raise IceFlix.WrongMediaId
 
 
 class StreamController(IceFlix.StreamController):
     '''Clase que implementa la interfaz de IceFlix para el stream controller.'''
-    def __init__(self, user_token, main_service):
+    def __init__(self, user_token, main_service, media_name):
         self._user_token = user_token
         self._main_service = main_service
+        self._media_name = media_name
+        self._emitter = None
 
     def getSDP(self, user_token, port, current=None): # pylint: disable=invalid-name, unused-argument
         '''Devuelve la configuración del flujo RTSP para la reproducción del vídeo.'''
@@ -72,20 +97,15 @@ class StreamController(IceFlix.StreamController):
         if not auth.isAuthorized(user_token):
             raise IceFlix.Unauthorized
 
+        self._emitter = RTSPEmitter(utils.SERVER_MEDIA_DIR + self._media_name, '127.0.0.1', 5000)
+        self._emitter.start()
+
+        return f'rtp://@127.0.0.1:{port}'
+
     def stop(self, current=None): # pylint: disable=invalid-name, unused-argument
         '''Interrumpe la reproducción de vídeo.'''
-
-
-class MediaUploader(IceFlix.MediaUploader):
-    '''Clase que implementa la interfaz de IceFlix para el media uploader.'''
-    def receive(self, size, current=None):
-        '''Recibe los datos.'''
-
-    def close(self):
-        '''Cierra el archivo.'''
-
-    def destroy(self):
-        '''Destruye el archivo.'''
+        self._emitter.stop()
+        current.adapter.remove(current.id)
 
 
 class StreamServer(Ice.Application):
@@ -106,17 +126,17 @@ class StreamServer(Ice.Application):
             raise RuntimeError('Invalid proxy for the catalog service')
 
         provider_adapter = broker.createObjectAdapter("ProviderAdapter")
-        servant = StreamProvider(main_service, catalog_service, provider_adapter)
+        servant = StreamProvider(main_service)
 
         provider_prx = provider_adapter.add(
             servant, broker.stringToIdentity("ProviderService"))
-        provider_adapter.activate()
+        provider_adapter.activate()        
 
-        media_files_list = listFiles(SERVER_MEDIA_DIR)
+        media_files_list = utils.listFiles(utils.SERVER_MEDIA_DIR)
         provider = IceFlix.StreamProviderPrx.checkedCast(provider_prx)
         for media in media_files_list:
             catalog_service.updateMedia(
-                getSHA256(SERVER_MEDIA_DIR + media), splitext(media)[0], provider)
+                utils.getSHA256(utils.SERVER_MEDIA_DIR + media), splitext(media)[0], provider)
 
         provider_adapter.activate()
         self.shutdownOnInterrupt()

@@ -54,7 +54,7 @@ class Authenticator(IceFlix.Authenticator):
         credentials = readCredDB()
         credentials[username] = password_hash
         writeCredDB(credentials)
-        print("Nuevo usuario creado con nombre: ", username)
+        print("\n[AUTH SERVICE] Nuevo usuario creado con nombre: ", username)
 
     def removeUser(self, username, adminToken, current=None): # pylint: disable=invalid-name, unused-argument
         '''Elimina un usuario si el token de administración es válido.'''

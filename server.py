@@ -49,23 +49,25 @@ class MainService(IceFlix.Main):
             for auth_prx in self._services_proxies["AuthPrx"]:
                 if auth_prx == proxy:
                     print(
-                        "Se ha intentado registrar un servicio de autenticación ya existente.")
+                        "\n[MAIN SERVICE] Se ha intentado registrar un servicio de autenticación " +
+                        "ya existente.")
                     return
 
-            print("\nAñadiendo nuevo servicio de autenticación...")
+            print("\n[MAIN SERVICE] Añadiendo nuevo servicio de autenticación...")
             self._services_proxies["AuthPrx"].append(proxy)
-            print("Nuevo servicio de autenticación añadido.")
+            print("[MAIN SERVICE] Nuevo servicio de autenticación añadido.")
 
         elif "CatalogService" in str(proxy):
             for catalog_prx in self._services_proxies["CatalogPrx"]:
                 if catalog_prx == proxy:
                     print(
-                        "Se ha intentado registrar un servicio de catálogo ya existente.")
+                        "\n[MAIN SERVICE] Se ha intentado registrar un servicio de catálogo " +
+                        "ya existente.")
                     return
 
-            print("\nAñadiendo nuevo servicio de catálogo...")
+            print("\n[MAIN SERVICE] Añadiendo nuevo servicio de catálogo...")
             self._services_proxies["CatalogPrx"].append(proxy)
-            print("Nuevo servicio de catálogo añadido.")
+            print("[MAIN SERVICE] Nuevo servicio de catálogo añadido.")
 
         else:
             raise IceFlix.UnknownService
@@ -75,13 +77,13 @@ class MainService(IceFlix.Main):
         for auth_prx in self._services_proxies["AuthPrx"]:
             try:
                 auth_prx.ice_ping()
-                print('Se ha obtenido el proxy de autenticador: ', auth_prx)
+                print('\n[MAIN SERVICE] Se ha obtenido el proxy de autenticador: ', auth_prx)
                 return IceFlix.AuthenticatorPrx.checkedCast(auth_prx)
 
             except Ice.ConnectionRefusedException: # pylint: disable=no-member
                 pass
 
-        print("\n[ERROR] No se ha encontrado ningún servicio de autenticación.")
+        print("\n[MAIN SERVICE][ERROR] No se ha encontrado ningún servicio de autenticación.")
         raise IceFlix.TemporaryUnavailable
 
     def getCatalog(self, current=None): # pylint: disable=invalid-name, unused-argument
@@ -89,13 +91,13 @@ class MainService(IceFlix.Main):
         for catalog_prx in self._services_proxies["CatalogPrx"]:
             try:
                 catalog_prx.ice_ping()
-                print('Se ha obtenido el proxy de catalogo: ', catalog_prx)
+                print('\n[MAIN SERVICE] Se ha obtenido el proxy de catalogo: ', catalog_prx)
                 return IceFlix.MediaCatalogPrx.checkedCast(catalog_prx)
 
             except Ice.ConnectionRefusedException: # pylint: disable=no-member
                 pass
 
-        print("\n[ERROR] No se ha encontrado ningún servicio de catálogo.")
+        print("\n[MAIN SERVICE][ERROR] No se ha encontrado ningún servicio de catálogo.")
         raise IceFlix.TemporaryUnavailable
 
 

@@ -3,10 +3,15 @@ from os import listdir, remove, rename
 from os.path import isfile, join
 import hashlib
 import json
+import itertools
 
-SERVER_MEDIA_DIR = 'server_media/'
-TAGS_DB = 'tagsDB.json'
-CREDENTIALS_DB = 'credentials.json'
+SERVER_MEDIA_DIR = 'resources/'
+CLIENT_MEDIA_DIR = 'client_media/'
+CHUNK_SIZE = 4094
+SPINNER = itertools.cycle(['|', '/', '-', '\\'])
+TAGS_DB = 'persistence/tagsDB.json'
+CREDENTIALS_DB = 'persistence/credentials.json'
+CATALOG_DB = 'persistence/catalog.db'
 ICEFLIX_BANNER = """
   ___         _____ _ _      
  |_ _|___ ___|  ___| (_)_  __

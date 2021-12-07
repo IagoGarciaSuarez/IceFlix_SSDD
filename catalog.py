@@ -6,7 +6,7 @@ Archivo que implementa las clases correspondientes al servicio de catálogo.
 
 import sys
 import Ice # pylint: disable=import-error,wrong-import-position
-from utils import CatalogDB, readTagsDB, writeTagsDB
+from utils import CatalogDB, readTagsDB, writeTagsDB, CATALOG_DB
 from media import Media, MediaInfo
 Ice.loadSlice('iceflix.ice')
 import IceFlix # pylint: disable=import-error,wrong-import-position
@@ -40,7 +40,7 @@ class Catalog(IceFlix.MediaCatalog):
         tags_db = readTagsDB()
         username = auth.whois(user_token)
 
-        if username in tags_db:
+        if username in tags_db and media_id in tags_db[username]:
             for tag in tags:
                 tags_db[username][media_id].append(tag)
         else:
@@ -89,7 +89,6 @@ class Catalog(IceFlix.MediaCatalog):
                 tag_list = [tag for tag in tags_db[user][media_id]]
             else:
                 tag_list = []
-
         return Media(media_id, self._media_with_proxy[media_id][-1],
                      MediaInfo(self._catalog.getNameById(media_id), tag_list))
 
@@ -105,10 +104,8 @@ class Catalog(IceFlix.MediaCatalog):
         auth = self._main_service.getAuthenticator()
 
         if not auth.isAuthorized(user_token):
-            #raise IceFlix.Unauthorized
-            print('NO AUTORIZADO')
-            return []
-
+            raise IceFlix.Unauthorized
+            
         tags_db = readTagsDB()
         user = auth.whois(user_token)
         tiles_list = []
@@ -132,7 +129,7 @@ class CatalogServer(Ice.Application):
         if not main_service:
             raise RuntimeError('Invalid proxy for the main service')
 
-        catalog_db = CatalogDB('catalog.db')
+        catalog_db = CatalogDB(CATALOG_DB)
         catalog_db.create_table()
 
         servant = Catalog(main_service, catalog_db)
