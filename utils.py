@@ -9,9 +9,10 @@ SERVER_MEDIA_DIR = 'resources/'
 CLIENT_MEDIA_DIR = 'client_media/'
 CHUNK_SIZE = 4094
 SPINNER = itertools.cycle(['|', '/', '-', '\\'])
-TAGS_DB = 'persistence/tagsDB.json'
-CREDENTIALS_DB = 'persistence/credentials.json'
 DATABASE_PATH = 'persistence/'
+TAGS_DB = DATABASE_PATH + 'tagsDB.json'
+CREDENTIALS_DB = DATABASE_PATH + 'credentials.json'
+CATALOG_DB = 'catalog.db'
 ICEFLIX_BANNER = """
   ___         _____ _ _      
  |_ _|___ ___|  ___| (_)_  __

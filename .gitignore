@@ -7,5 +7,5 @@ proxy.out
 build/
 dist/
 *.egg-info/
-resources/*
+my_resources/*
 

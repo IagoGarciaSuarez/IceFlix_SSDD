@@ -84,11 +84,11 @@ class Catalog(IceFlix.MediaCatalog):
             raise IceFlix.TemporaryUnavailable
 
         tags_db = readTagsDB()
+        tag_list = []
         for user in tags_db:
             if media_id in tags_db[user]:
                 tag_list = [tag for tag in tags_db[user][media_id]]
-            else:
-                tag_list = []
+
         return Media(media_id, self._media_with_proxy[media_id][-1],
                      MediaInfo(self._catalog.getNameById(media_id), tag_list))
 

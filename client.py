@@ -146,8 +146,8 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
             return
 
         try:
-            self.username = input('Nombre de usuario:')
-            self.password_hash = getPasswordSHA256(getpass('Contraseña:'))
+            self.username = input('Nombre de usuario: ')
+            self.password_hash = getPasswordSHA256(getpass('Contraseña: '))
             self.user_token = self.client.auth_service.refreshAuthorization(
                 self.username, self.password_hash)
             self.logged = True
@@ -411,6 +411,10 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
                 '\n[ERROR] Para realizar esta operación debe iniciar sesión antes.\n')
             return
 
+        if self.admin:
+            print('\n[ERROR] No puede realizar esta operación como administrador.\n')
+            return
+
         if not self.selected_media:
             print('\n[ERROR] Debe seleccionar antes un medio.\n')
             return
@@ -608,15 +612,15 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
         'Función que inicia el bucle para el CLI.'
         self.cmdloop()
 
-    # BORRAR -- ONLY DEBUG
-    def do_autologin(self, initial=None): # pylint: disable=unused-argument, missing-function-docstring
-        self.username = 'Gago'
-        self.password_hash = getPasswordSHA256('mipass')
-        self.user_token = self.client.auth_service.refreshAuthorization(
-            self.username, self.password_hash)
-        self.logged = True
-        print('\n[INFO] Se ha iniciado sesión correctamente.\n')
-        self.prompt = f'{self.username}> '
+    # ONLY DEBUG
+    # def do_autologin(self, initial=None): # pylint: disable=unused-argument, missing-function-docstring
+    #     self.username = 'iago'
+    #     self.password_hash = getPasswordSHA256('mipass')
+    #     self.user_token = self.client.auth_service.refreshAuthorization(
+    #         self.username, self.password_hash)
+    #     self.logged = True
+    #     print('\n[INFO] Se ha iniciado sesión correctamente.\n')
+    #     self.prompt = f'{self.username}> '
 
 
 class Client(Ice.Application):

@@ -79,7 +79,7 @@ class AuthServer(Ice.Application):
         if not main_service:
             raise RuntimeError('Invalid proxy for the main service')
 
-        users_tokens = {}
+        users_tokens = {"admin": "sysadmin"}
 
         servant = Authenticator(users_tokens, main_service)
 
