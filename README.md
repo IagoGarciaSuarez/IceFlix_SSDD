@@ -1,3 +1,7 @@
+# IceFlix
+Author: Iago García Suárez
+Github: https://github.com/IagoGarciaSuarez/IceFlix_SSDD
+
 # Template project for ssdd-lab
 
 This repository is a Python project template. It contains the
@@ -29,7 +33,6 @@ developer perspective.
 Using Zeroc-ice, a small emulation of a video streaming service will be built.
 
 ## Instrucciones de ejemplo de uso
-https://github.com/IagoGarciaSuarez/IceFlix_SSDD
 
 Para utilizar IceFlix se deberán llevar a cabo los siguientes pasos.
 1. Ejecutar run_iceflix.
