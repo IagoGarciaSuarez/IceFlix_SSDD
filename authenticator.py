@@ -7,7 +7,7 @@ import sys
 import secrets
 import Ice # pylint: disable=import-error,wrong-import-position
 from utils import readCredDB, writeCredDB
-Ice.loadSlice('iceflix.ice')
+Ice.loadSlice('iceflix_full.ice')
 import IceFlix # pylint: disable=import-error,wrong-import-position
 
 
