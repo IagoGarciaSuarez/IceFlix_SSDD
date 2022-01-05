@@ -21,7 +21,7 @@ run-icestorm:
 
 run-server:
 	gnome-terminal -- bash -c \
-	"./server.py --Ice.Config=$(DIRCONFIG)Server.config; bash"
+	"./server.py --Ice.Config=$(DIRCONFIG)Server.config | tee server.out; bash"
 
 run-auth:
 	gnome-terminal -- bash -c \

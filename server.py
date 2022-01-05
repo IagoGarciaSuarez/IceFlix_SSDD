@@ -3,6 +3,7 @@
 '''
 Archivo que implementa las clases correspondientes al servicio de principal de IceFlix.
 '''
+import logging
 import sys
 import random
 import uuid
@@ -15,95 +16,37 @@ except ImportError:
     import IceFlix # pylint: disable=import-error,wrong-import-position
 import topics
 from volatile_services import VolatileServices
-
-class Discover(IceFlix.ServiceAnnouncements):
-    """Listen all announcements."""
-    def __init__(self, main_service):
-        """Initialize the Discover object with empty services."""
-        self._auth_services = {}
-        self._catalog_services = {}
-        self._main_services = {}
-        self._main_service = main_service
-
-    @property
-    def known_services(self):
-        """Get serviceIds for all services."""
-        return list(self._auth_services.keys()) + list(self._catalog_services.keys()) + \
-            list(self._main_services.keys())
-
-    def newService(self, service, srvId, current=None): # pylint: disable=unused-argument
-        """Check service type and add it."""
-        volatile_services = self._main_service.getVolatileServices
-        
-        if self._main_service.isFirst:
-            main_service = IceFlix.MainPrx.checkedCast(service)
-            main_service.updateDB(volatile_services, self._main_service.service_id)
-        
-        if srvId in self.known_services:
-            return
-        if service.ice_isA('::IceFlix::Authenticator'):
-            print(f'New authenticator service: {srvId}')
-            self._auth_services[srvId] = IceFlix.AuthenticatorPrx.uncheckedCast(service)
-            volatile_services.auth_services.append(IceFlix.AuthenticatorPrx.uncheckedCast(service))
-        elif service.ice_isA('::IceFlix::MediaCatalog'):
-            print(f'New catalog service: {srvId}')
-            self._catalog_services[srvId] = IceFlix.MediaCatalogPrx.uncheckedCast(service)
-            volatile_services.catalog_services.append(
-                IceFlix.MediaCatalogPrx.uncheckedCast(service))
-        elif service.ice_isA('::IceFlix::Main'):
-            print(f'New main service: {srvId}')
-            self._main_services[srvId] = IceFlix.MainPrx.uncheckedCast(service)
-
-        self._main_service.setVolatileServices(volatile_services)
-        
-    def announce(self, service, srvId, current=None):  # pylint: disable=unused-argument
-        """Check service type and add it."""
-        volatile_services = self._main_service.getVolatileServices
-        
-        if srvId in self.known_services:
-            return
-        if service.ice_isA('::IceFlix::Authenticator'):
-            print(f'New authenticator service: {srvId}')
-            self._auth_services[srvId] = IceFlix.AuthenticatorPrx.uncheckedCast(service)
-            volatile_services.auth_services.append(IceFlix.AuthenticatorPrx.uncheckedCast(service))
-        elif service.ice_isA('::IceFlix::MediaCatalog'):
-            print(f'New catalog service: {srvId}')
-            self._catalog_services[srvId] = IceFlix.MediaCatalogPrx.uncheckedCast(service)
-            volatile_services.catalog_services.append(
-                IceFlix.MediaCatalogPrx.uncheckedCast(service))
-        elif service.ice_isA('::IceFlix::Main'):
-            print(f'New main service: {srvId}')
-            self._main_services[srvId] = IceFlix.MainPrx.uncheckedCast(service)
+from discover import Discover
 
 class MainService(IceFlix.Main):
     '''Clase que implementa la interfaz de IceFlix para el servicio principal.'''
-    def __init__(self, discover_subscriber, admin_token):
+    def __init__(self, admin_token, broker):
         self.admin_token = admin_token
-        self._discover_subscriber = discover_subscriber
+        self.discover_subscriber = None
+        self._broker = broker
         self._volatile_services = VolatileServices()
-        self._auth_services = self._volatile_services.auth_services
-        self._catalog_services = self._volatile_services.catalog_services
+        self._auth_services = self._volatile_services.authenticators
+        self._catalog_services = self._volatile_services.mediaCatalogs
         self._srv_id = str(uuid.uuid4())
-        self._is_first = False
+        self.is_up_to_date = False
         self.timer = None
 
     @property
-    def setFirst(self):
-        """Set this instance as the first for the db reference."""
-        self._is_first = True
-
-    @property
-    def isFirst(self):
-        """Get instance ID."""
-        return self._is_first
+    def isUpToDate(self):
+        """Return if the database is up to date or not."""
+        return self.is_up_to_date
 
     @property
     def getVolatileServices(self):
         return self._volatile_services
 
-    @property
-    def setVolatileServices(self, volatile_services):
-        self._volatile_services = volatile_services
+    # @property
+    # def addAuthService(self, auth_service):
+    #     self._volatile_services.auth_services.append(auth_service)
+
+    # @property
+    # def addCatalogService(self, catalog_service):
+    #     self._volatile_services.catalog_services.append(catalog_service)
 
     @property
     def service_id(self):
@@ -159,33 +102,65 @@ class MainService(IceFlix.Main):
         raise IceFlix.TemporaryUnavailable
 
     def updateDB(self, volatile_services, srvId, current=None):
-        if srvId in self._discover_subscriber.known_services:
-            self.timer.cancel()
-            self._auth_services = volatile_services.auth_services
-            self._catalog_services = volatile_services.catalog_services
+        logging.warning("Called update")
+        if self.service_id == srvId:
+            return
+        print(self.timer, "Antes de cancelar", flush=True)
+        self.timer.cancel()
+        if not self.is_up_to_date:  
+            # service = IceFlix.MainPrx.checkedCast(self.discover_subscriber._main_services[srvId])
+            # if service.admin_token != self.admin_token:
+            #     print(
+            #         "\n[MAIN SERVICE][ERROR] Token de administración no válido. " +
+            #         "Terminando ejecución...", flush=True)
+            #     self._broker.shutdown()
+            #     return
+            self._volatile_services = volatile_services
+            self.is_up_to_date = True
 
 class Server(Ice.Application):
     '''Clase que implementa el servicio principal.'''
     def run(self, arg): # pylint: disable=arguments-differ, unused-argument
         broker = self.communicator()
-        main_adapter = broker.createObjectAdapterWithEndpoint('MainAdapter', 'tcp')
+        main_adapter = broker.createObjectAdapterWithEndpoints('MainAdapter', 'tcp')
         main_adapter.activate()
 
-        discover_topic = topics.getTopic(topics.getTopicManager(self.communicator()), 'discover')
-        discover_subscriber = Discover()
-        discover_subscriber_proxy = main_adapter.addWithUUID(discover_subscriber)
-        publisher = discover_topic.subscribeAndGetPublisher({}, discover_subscriber_proxy)
-
-        servant = MainService(discover_subscriber, broker.getProperties().getProperty('AdminToken'))
+        servant = MainService(broker.getProperties().getProperty('AdminToken'), broker)
         servant_proxy = main_adapter.addWithUUID(servant)
 
+        discover_topic = topics.getTopic(topics.getTopicManager(self.communicator()), 'discover')
+
+        servant.discover_subscriber = Discover(servant, servant_proxy)
+        discover_subscriber_proxy = main_adapter.addWithUUID(servant.discover_subscriber)
+
+        discover_topic.subscribeAndGetPublisher({}, discover_subscriber_proxy)
+        publisher = discover_topic.getPublisher()
         print(servant_proxy, flush=True)
 
         discover_publisher = IceFlix.ServiceAnnouncementsPrx.uncheckedCast(publisher)
-        discover_publisher.newService(servant.service_id, servant_proxy)
+        servant.discover_subscriber.publisher = discover_publisher
 
-        servant.timer = threading.Timer(3.0, servant.setFirst)
+        discover_publisher.newService(servant_proxy, servant.service_id)
+        
+        def announce():
+            discover_publisher.announce(servant_proxy, servant.service_id)
+            t = threading.Timer(2.0+random.uniform(0.0, 2.0), lambda: announce())
+            t.start()
+            
+        def setUpToDate():
+            logging.warning('Im up to date')
+            servant.is_up_to_date = True
+            announce()
+
+
+        servant.timer = threading.Timer(3.0, lambda: setUpToDate())
         servant.timer.start()
+        print(servant.timer, flush=True)
+
+        
+
+
+        print("\n[MAIN SERVICE] Servicio iniciado.")
 
         self.shutdownOnInterrupt()
         broker.waitForShutdown()

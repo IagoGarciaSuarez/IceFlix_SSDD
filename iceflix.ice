@@ -158,7 +158,7 @@
     struct VolatileServices {
         AuthenticatorList authenticators;
         MediaCatalogList mediaCatalogs;
-    }
+    };
 
     interface Main {
         Authenticator* getAuthenticator() throws TemporaryUnavailable;
