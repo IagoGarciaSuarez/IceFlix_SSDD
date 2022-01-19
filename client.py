@@ -534,7 +534,7 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
         username = arg.strip()
 
         try:
-            self.client.auth_service.removeuser(username, self.user_token)
+            self.client.auth_service.removeUser(username, self.user_token)
             print(f'\n[INFO] Se ha elimiado el usuario \'{username}\' con éxito.\n')
         except IceFlix.Unauthorized:
             print(

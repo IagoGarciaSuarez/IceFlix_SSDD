@@ -1,6 +1,7 @@
 from time import sleep
 import threading
 import random
+from utils import read_cred_db, write_cred_db
 import Ice  # pylint: disable=import-error,wrong-import-position
 try:
     import IceFlix # pylint: disable=import-error,wrong-import-position
@@ -8,70 +9,22 @@ except ImportError:
     Ice.loadSlice('iceflix.ice')
     import IceFlix # pylint: disable=import-error,wrong-import-position
 
-class Discover(IceFlix.ServiceAnnouncements):
-    """Discover class to listen to announcements and new services from all services."""
+class UserUpdates(IceFlix.UserUpdates):
+    """UserUpdates class to listen to user updates events from other auth services."""
     def __init__(self, service_servant, service):
-        """Initialize the Discover object with empty services."""
+        """Initialize the UserUpdates object."""
         self._service_servant = service_servant
         self._service = service
-        self._auth_services = {}
-        self._catalog_services = {}
-        self.main_services = {}
         self.publisher = None
-        self.announce_timer = threading.Timer(
-            4.0+random.uniform(0.0, 2.0), lambda: self.announce(
-                self._service, self._service_servant.service_id))
 
-        if self._service.ice_isA('::IceFlix::Authenticator'):
-            self._auth_services[self._service_servant.service_id] = self._service
-        elif self._service.ice_isA('::IceFlix::MediaCatalog'):
-            self._catalog_services[self._service_servant.service_id] = self._service
-        elif self._service.ice_isA('::IceFlix::Main'):
-            self.main_services[self._service_servant.service_id] = self._service
-
-    @property
-    def known_services(self):
-        """Get serviceIds for all services."""
-        return list(self._auth_services.keys()) + list(self._catalog_services.keys()) + \
-            list(self.main_services.keys())
-
-    def newService(self, service, srvId, current=None): # pylint: disable=unused-argument
-        """Check service type and add it."""
+    def newUser(self, user, passwordHash, srvId, current=None): # pylint: disable=unused-argument
+        """Adds a new user."""
         if srvId == self._service_servant.service_id:
             return
-
-        if service.ice_isA('::IceFlix::Authenticator'):
-            print(f'New authenticator service: {srvId}')
-            self._auth_services[srvId] = IceFlix.AuthenticatorPrx.checkedCast(service)
-            
-            if self._service.ice_isA('::IceFlix::Authenticator')\
-                and self._service_servant.is_up_to_date:
-
-                self.publisher.announce(self._service, self._service_servant.service_id)
-                sleep(1)
-                self._auth_services[srvId].updateDB(
-                    self._service_servant.current_database, self._service_servant.service_id)
-
-            if self._service.ice_isA('::IceFlix::Main'):
-                self._service_servant.auth_services.append(
-                    self._auth_services[srvId])
-
-        elif service.ice_isA('::IceFlix::MediaCatalog'):
-            print(f'New catalog service: {srvId}')
-            self._catalog_services[srvId] = IceFlix.MediaCatalogPrx.checkedCast(service)
-            if self._service.ice_isA('::IceFlix::Main'):
-                self._service_servant.auth_services.append(
-                    self._auth_services[srvId])
-
-        elif service.ice_isA('::IceFlix::Main'):
-            print(f'New main service: {srvId}', flush=True)
-            self.main_services[srvId] = IceFlix.MainPrx.uncheckedCast(service)
-
-            if self._service.ice_isA('::IceFlix::Main') and self._service_servant.isUpToDate:
-                self.publisher.announce(self._service, self._service_servant.service_id)
-                sleep(1)
-                self.main_services[srvId].updateDB(
-                    self._service_servant.get_volatile_services, self._service_servant.service_id)
+        
+        credentials = read_cred_db(self._service_servant.credentials_db)
+        credentials[user] = passwordHash
+        write_cred_db(credentials, self._service_servant.credentials_db)
 
     def announce(self, service, srvId, current=None):  # pylint: disable=unused-argument
         """Check service type and add it if it is new."""

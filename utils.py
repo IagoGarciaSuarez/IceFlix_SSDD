@@ -9,9 +9,8 @@ SERVER_MEDIA_DIR = 'resources/'
 CLIENT_MEDIA_DIR = 'client_media/'
 CHUNK_SIZE = 4094
 SPINNER = itertools.cycle(['|', '/', '-', '\\'])
-DATABASE_PATH = 'persistence/'
+DATABASE_PATH = 'persistence/credentialsDB'
 TAGS_DB = DATABASE_PATH + 'tagsDB.json'
-CREDENTIALS_DB = DATABASE_PATH + 'credentials.json'
 CATALOG_DB = 'catalog.db'
 ICEFLIX_BANNER = """
   ___         _____ _ _      
@@ -111,7 +110,7 @@ class CatalogDB():
 
 #=================== GENERAL FUNCTIONS ===================
 
-def getSHA256(filename):
+def get_sha256(filename):
     sha256_hash = hashlib.sha256()
     with open(filename,"rb") as f:
         for byte_block in iter(lambda: f.read(4096),b""):
@@ -119,37 +118,39 @@ def getSHA256(filename):
     f.close()
     return sha256_hash.hexdigest()
 
-def listFiles(path):
+def list_files(path):
     onlyfiles = [f for f in listdir(path) if isfile(join(path, f))]
     return onlyfiles
 
-def removeFile(id):
-    for media in listFiles(SERVER_MEDIA_DIR):
-        if getSHA256(SERVER_MEDIA_DIR + media) == id:
+def remove_file(id):
+    for media in list_files(SERVER_MEDIA_DIR):
+        if get_sha256(SERVER_MEDIA_DIR + media) == id:
             remove(SERVER_MEDIA_DIR + media)
             return True
     return False
     
-def readTagsDB():
+def read_tags_db():
     with open(TAGS_DB, 'r') as f:
             tagsDB = json.load(f)
             f.close()
     return tagsDB
 
-def writeTagsDB(tagsDB):
+def write_tags_db(tagsDB):
     with open(TAGS_DB, 'w') as f:
         json.dump(tagsDB, f)
         f.close()
 
-def readCredDB():
-    with open(CREDENTIALS_DB, 'r') as f:
-        credDB = json.load(f)
+def read_cred_db(credentials_db):
+    credentials_db = DATABASE_PATH + credentials_db
+    with open(credentials_db, 'r') as f:
+        cred_db = json.load(f)
         f.close()
-    return credDB
+    return cred_db
 
-def writeCredDB(credDB):
-    with open(CREDENTIALS_DB, 'w') as f:
-        json.dump(credDB, f)
+def write_cred_db(credentials, credentials_db):
+    credentials_db = DATABASE_PATH + credentials_db
+    with open(credentials_db, 'w') as f:
+        json.dump(credentials, f)
         f.close()
 
 def getPasswordSHA256(password):
