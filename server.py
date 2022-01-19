@@ -3,7 +3,6 @@
 '''
 Archivo que implementa las clases correspondientes al servicio de principal de IceFlix.
 '''
-import logging
 import sys
 import random
 import uuid
@@ -29,7 +28,7 @@ class MainService(IceFlix.Main):
         self._catalog_services = self._volatile_services.mediaCatalogs
         self._srv_id = str(uuid.uuid4())
         self.is_up_to_date = False
-        self.timer = None
+        self.up_to_date_timer = None
 
     @property
     def isUpToDate(self):
@@ -102,21 +101,23 @@ class MainService(IceFlix.Main):
         raise IceFlix.TemporaryUnavailable
 
     def updateDB(self, volatile_services, srvId, current=None):
-        logging.warning("Called update")
         if self.service_id == srvId:
             return
-        print(self.timer, "Antes de cancelar", flush=True)
-        self.timer.cancel()
         if not self.is_up_to_date:  
-            # service = IceFlix.MainPrx.checkedCast(self.discover_subscriber._main_services[srvId])
-            # if service.admin_token != self.admin_token:
-            #     print(
-            #         "\n[MAIN SERVICE][ERROR] Token de administración no válido. " +
-            #         "Terminando ejecución...", flush=True)
-            #     self._broker.shutdown()
-            #     return
-            self._volatile_services = volatile_services
-            self.is_up_to_date = True
+            if srvId in self.discover_subscriber._main_services.keys():
+                service = IceFlix.MainPrx.checkedCast(self.discover_subscriber._main_services[srvId])
+                if not service.isAdmin(self.admin_token):
+                    print(
+                        "\n[MAIN SERVICE][ERROR] Token de administración no válido. " +
+                        "Terminando ejecución...", flush=True)
+                    self.up_to_date_timer.cancel()
+                    self._broker.shutdown()
+                    return
+                if self.up_to_date_timer.is_alive():
+                    self.up_to_date_timer.cancel()
+                self._volatile_services = volatile_services
+                self.is_up_to_date = True
+                self.discover_subscriber.announce_timer.start()
 
 class Server(Ice.Application):
     '''Clase que implementa el servicio principal.'''
@@ -140,27 +141,18 @@ class Server(Ice.Application):
         discover_publisher = IceFlix.ServiceAnnouncementsPrx.uncheckedCast(publisher)
         servant.discover_subscriber.publisher = discover_publisher
 
-        discover_publisher.newService(servant_proxy, servant.service_id)
-        
-        def announce():
-            discover_publisher.announce(servant_proxy, servant.service_id)
-            t = threading.Timer(2.0+random.uniform(0.0, 2.0), lambda: announce())
-            t.start()
+        servant.discover_subscriber.publisher.newService(servant_proxy, servant.service_id)
             
         def setUpToDate():
-            logging.warning('Im up to date')
+            print("\n[MAIN SERVICE] No update event received. Assuming I'm the first of my kind...")
             servant.is_up_to_date = True
-            announce()
-
-
-        servant.timer = threading.Timer(3.0, lambda: setUpToDate())
-        servant.timer.start()
-        print(servant.timer, flush=True)
-
-        
-
+            servant.discover_subscriber.announce_timer.start()            
+            
+        servant.up_to_date_timer = threading.Timer(3.0, setUpToDate)
+        servant.up_to_date_timer.start()
 
         print("\n[MAIN SERVICE] Servicio iniciado.")
+
 
         self.shutdownOnInterrupt()
         broker.waitForShutdown()

@@ -5,7 +5,7 @@ Ice.loadSlice('iceflix.ice')
 import IceFlix # pylint: disable=import-error,wrong-import-position
 
 class VolatileServices(IceFlix.VolatileServices):
-    'Clase para el objeto Media de IceFlix.'
+    'Clase para el objeto VolatileServices de IceFlix.'
     def __init__(self, auth_services=[], catalog_services=[]):
         self.authenticators = auth_services
         self.mediaCatalogs = catalog_services

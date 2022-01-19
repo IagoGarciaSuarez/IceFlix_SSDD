@@ -1,3 +1,6 @@
+from time import sleep
+import threading
+import random
 import Ice  # pylint: disable=import-error,wrong-import-position
 try:
     import IceFlix # pylint: disable=import-error,wrong-import-position
@@ -15,6 +18,9 @@ class Discover(IceFlix.ServiceAnnouncements):
         self._catalog_services = {}
         self._main_services = {}
         self.publisher = None
+        self.announce_timer = threading.Timer(
+            4.0+random.uniform(0.0, 2.0), lambda: self.announce(
+                self._service, self._service_servant.service_id))
 
         if self._service.ice_isA('::IceFlix::Authenticator'):
             self._auth_services[self._service_servant.service_id] = self._service
@@ -22,7 +28,7 @@ class Discover(IceFlix.ServiceAnnouncements):
             self._catalog_services[self._service_servant.service_id] = self._service
         elif self._service.ice_isA('::IceFlix::Main'):
             self._main_services[self._service_servant.service_id] = self._service
-            
+
     @property
     def known_services(self):
         """Get serviceIds for all services."""
@@ -30,7 +36,7 @@ class Discover(IceFlix.ServiceAnnouncements):
             list(self._main_services.keys())
 
     def newService(self, service, srvId, current=None): # pylint: disable=unused-argument
-        """Check service type and add it.""" 
+        """Check service type and add it."""
         if srvId == self._service_servant.service_id:
             return
 
@@ -51,22 +57,23 @@ class Discover(IceFlix.ServiceAnnouncements):
         elif service.ice_isA('::IceFlix::Main'):
             print(f'New main service: {srvId}', flush=True)
             self._main_services[srvId] = IceFlix.MainPrx.uncheckedCast(service)
+
             if self._service.ice_isA('::IceFlix::Main') and self._service_servant.isUpToDate:
-                # self.publisher.announce(self._service, self._service_servant.service_id)
+                self.publisher.announce(self._service, self._service_servant.service_id)
+                sleep(1)
                 self._main_services[srvId].updateDB(
                     self._service_servant.getVolatileServices, self._service_servant.service_id)
 
     def announce(self, service, srvId, current=None):  # pylint: disable=unused-argument
-        """Check service type and add it."""
-        print(self.known_services, flush=True)
-        # for auth_srv in self._auth_services.values():
-        #     try:
-        #         auth_srv.ice_ping()
-        #     except Ice.ConnectionRefusedException: # pylint: disable=no-member
-        #         self._auth_services = {
-        #             key:val for key, val in self._auth_services.items() \
-        #             if val!=auth_srv}
-        #         self._service_servant.getVolatileServices.authenticators.remove(auth_srv)
+        """Check service type and add it if it is new."""
+        for auth_srv in self._auth_services.values():
+            try:
+                auth_srv.ice_ping()
+            except Ice.ConnectionRefusedException: # pylint: disable=no-member
+                self._auth_services = {
+                    key:val for key, val in self._auth_services.items() \
+                    if val!=auth_srv}
+                self._service_servant.getVolatileServices.authenticators.remove(auth_srv)
 
         # for catalog_srv in self._catalog_services.values():
         #     try:
@@ -77,22 +84,24 @@ class Discover(IceFlix.ServiceAnnouncements):
         #             if val!=catalog_srv}
         #         self._service_servant.getVolatileServices.mediaCatalogs.remove(catalog_srv)
 
-        # for main_srv in self._main_services.values():
-        #     try:
-        #         main_srv.ice_ping()
-        #     except Ice.ConnectionRefusedException: # pylint: disable=no-member
-        #         self._main_services = {
-        #             key:val for key, val in self._main_services.items() \
-        #             if val!=main_srv}
+        for main_srv in self._main_services.values():
+            try:
+                main_srv.ice_ping()
+            except Ice.ConnectionRefusedException: # pylint: disable=no-member
+                self._main_services = {
+                    key:val for key, val in self._main_services.items() \
+                    if val!=main_srv}
 
         if srvId in self.known_services or srvId == self._service_servant.service_id:
             return
 
-        # if service.ice_isA('::IceFlix::Authenticator'):
-        #     self._auth_services[srvId] = IceFlix.AuthenticatorPrx.uncheckedCast(service)
+        if service.ice_isA('::IceFlix::Authenticator'):
+            self._auth_services[srvId] = IceFlix.AuthenticatorPrx.uncheckedCast(service)
 
         # elif service.ice_isA('::IceFlix::MediaCatalog'):
         #     self._catalog_services[srvId] = IceFlix.MediaCatalogPrx.uncheckedCast(service)
 
-        elif service.ice_isA('::IceFlix::Main'):
-            self._main_services[srvId] = IceFlix.MainPrx.uncheckedCast(service)
+        if service.ice_isA('::IceFlix::Main'):
+            self._main_services[srvId] = IceFlix.MainPrx.checkedCast(service)
+
+        # print(f'Known services por service {self._service_servant.service_id} are {self.known_services}')
