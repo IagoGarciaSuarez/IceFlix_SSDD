@@ -5,24 +5,23 @@
 
 import IceStorm
 
-
 DEFAULT_TOPICMANAGER_PROXY = 'IceStorm/TopicManager:tcp -p 10000'
 
 
-def getTopicManager(broker, proxy=DEFAULT_TOPICMANAGER_PROXY):
+def getTopicManager(broker, proxy=DEFAULT_TOPICMANAGER_PROXY): # pylint: disable=invalid-name
     '''Get TopicManager object'''
     proxy = broker.stringToProxy(proxy)
-    tm = IceStorm.TopicManagerPrx.checkedCast(proxy)
-    if not tm:
+    topic_manager = IceStorm.TopicManagerPrx.checkedCast(proxy) # pylint: disable=no-member
+    if not topic_manager:
         raise ValueError(f'Proxy {proxy} is not a valid TopicManager() proxy')
-    return tm
+    return topic_manager
 
 
-def getTopic(topicManager, topic):
+def getTopic(topic_manager, topic): # pylint: disable=invalid-name
     '''Get Topic proxy'''
     try:
-        topic = topicManager.retrieve(topic)
-    except IceStorm.NoSuchTopic:
-        topic = topicManager.create(topic)
-    finally:
-        return topic
+        topic = topic_manager.retrieve(topic)
+    except IceStorm.NoSuchTopic: # pylint: disable=no-member
+        topic = topic_manager.create(topic)
+
+    return topic

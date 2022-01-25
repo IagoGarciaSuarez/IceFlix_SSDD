@@ -12,11 +12,13 @@ Clases en el archivo:
 import sys
 import time
 import cmd
-
 from getpass import getpass
 import Ice  # pylint: disable=import-error,wrong-import-position
+import topics
+from revocations import Revocations
+from stream_sync import StreamSync
 from iceflixrtsp import RTSPPlayer
-from utils import getPasswordSHA256, ICEFLIX_BANNER
+from utils import get_password_sha256, ICEFLIX_BANNER
 Ice.loadSlice('iceflix.ice')
 import IceFlix  # pylint: disable=import-error,wrong-import-position
 
@@ -25,21 +27,16 @@ class IceFlixClient: # pylint: disable=too-few-public-methods
     Clase que permite la conexión a los servicios de IceFlix.
     '''
     def __init__(self, broker):
-        self._communicator = broker
-        self.adapter = self._communicator.createObjectAdapterWithEndpoints(
+        self.communicator = broker
+        self.adapter = self.communicator.createObjectAdapterWithEndpoints(
             'IceFlix', 'tcp')
         self.adapter.activate()
         self.main_service = None
         self.player = None
-        # self._user = None
-        # self._password_hash = None
-        # self._iceflix_prx = None
-        # self._iceflix = None
-        # self._media = None
 
     def run(self, mainprx):
         '''Main de IceFlixClient'''
-        main_proxy = self._communicator.stringToProxy(mainprx)
+        main_proxy = self.communicator.stringToProxy(mainprx)
 
         for intento in range(3):
             try:
@@ -65,7 +62,7 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
             completekey='tab', stdin=stdin, stdout=stdout)
         self.client = None
         self._last_results_ = {}
-        self._controller = None
+        self.controller = None
 
     prompt = '> '
     intro = ICEFLIX_BANNER + \
@@ -79,6 +76,11 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
     logged = False
     admin = False
     selected_media = None
+    revocations_topic = None
+    revocations_subscriber_proxy = None
+    controller_topic = None
+    controller_subscriber_proxy = None
+    token_refreshed = False
 
     def do_iniciar(self, arg, initial=None): # pylint: disable=unused-argument
         'iniciar <proxy> - Se conecta a un servicio IceFlix para comenzar a utilizar la plataforma.'
@@ -116,11 +118,19 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
         try:
             auth_service = self.client.main_service.getAuthenticator()
             self.username = input('Nombre de usuario: ')
-            self.password_hash = getPasswordSHA256(getpass('Contraseña: '))
+            self.password_hash = get_password_sha256(getpass('Contraseña: '))
             self.user_token = auth_service.refreshAuthorization(self.username, self.password_hash)
+            self.token_refreshed = True
             self.logged = True
             print('\n[INFO] Se ha iniciado sesión correctamente.\n')
             self.prompt = f'{self.username}> '
+
+            self.revocations_topic = topics.getTopic(topics.getTopicManager(
+                self.client.communicator), 'revocations')
+            revocations = Revocations(self)
+            self.revocations_subscriber_proxy = self.client.adapter.addWithUUID(revocations)
+            self.revocations_topic.subscribeAndGetPublisher({}, self.revocations_subscriber_proxy)
+
         except IceFlix.Unauthorized:
             print('\n[ERROR] Error al introducir las credenciales.\n')
         except IceFlix.TemporaryUnavailable:
@@ -147,9 +157,17 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
                 self.admin = True
                 self.username = None
                 self.password_hash = None
+                self.token_refreshed = True
                 print(
                     '\n[INFO] Se ha iniciado sesión de administrador correctamente.\n')
                 self.prompt = f'[ADMIN]> '
+
+                self.revocations_topic = topics.getTopic(topics.getTopicManager(
+                    self.client.communicator), 'revocations')
+                revocations = Revocations(self)
+                self.revocations_subscriber_proxy = self.client.adapter.addWithUUID(revocations)
+                self.revocations_topic.subscribeAndGetPublisher(
+                    {}, self.revocations_subscriber_proxy)
             else:
                 print('\n[ERROR] Error al introducir el token de administrador.\n')
 
@@ -172,6 +190,7 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
             self.logged = False
             self.admin = False
             self.prompt = '> '
+            self.revocations_topic.unsubscribe(self.revocations_subscriber_proxy)
             print('\n[INFO] Se ha cerrado la sesión correctamente.\n')
 
         else:
@@ -327,7 +346,7 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
         self.selected_media = None
         self.prompt = f'{self.username}> '
 
-    def do_rename(self, arg, initial=None): # pylint: disable=unused-argument
+    def do_rename(self, arg, initial=None): # pylint: disable=unused-argument, too-many-return-statements
         ('rename <nuevo nombre> - Cambia el nombre de un medio por el valor <nuevo nombre>. '
          'Operación de administrador.\n')
         if not self.iniciado:
@@ -385,7 +404,7 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
                 'no está disponible en este momento.\n')
             return
 
-    def do_addtags(self, arg, initial=None): # pylint: disable=unused-argument
+    def do_addtags(self, arg, initial=None): # pylint: disable=unused-argument, too-many-return-statements
         '''addtags tags - Añade una secuencia de tags al medio seleccionado.
             Ejemplo:
                 Tags a añadir al medio seleccionado: Accion, Thriller, Romántica.
@@ -513,7 +532,7 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
             return
         try:
             username = input('Nombre del nuevo usuario: ')
-            password_hash = getPasswordSHA256(getpass('Contraseña del nuevo usuario: '))
+            password_hash = get_password_sha256(getpass('Contraseña del nuevo usuario: '))
             auth_service.addUser(username, password_hash, self.user_token)
             print('\n[INFO] Usuario añadido correctamente.\n')
         except IceFlix.Unauthorized:
@@ -557,7 +576,7 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
                 f'el usuario \'{username}\'.\n')
             return
 
-    def do_play(self, initial=None): # pylint: disable=unused-argument
+    def do_play(self, initial=None): # pylint: disable=unused-argument, too-many-return-statements
         'play - Inicia la reproducción del medio seleccionado.\n'
         if not self.iniciado:
             print(
@@ -579,10 +598,22 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
             return
 
         try:
-            self._controller = self.selected_media.provider \
+            self.controller = self.selected_media.provider \
                 .getStream(self.selected_media.mediaId, self.user_token)
-            rtsp_config = self._controller.getSDP(self.user_token, 5000)
+            if not self.controller:
+                print('\n[ERROR] No se ha podido obtener un controlador válido.\n')
+                return
 
+            self.controller_topic = topics.getTopic(topics.getTopicManager(
+                self.client.communicator), f'{self.controller.service_id}')
+            controller = StreamSync(self)
+            self.controller_subscriber_proxy = self.client.adapter.addWithUUID(controller)
+            self.controller_topic.subscribeAndGetPublisher({}, self.controller_subscriber_proxy)
+
+            rtsp_config = self.controller.getSDP(self.user_token, 5000)
+            if not rtsp_config:
+                print('\n[ERROR] No se ha podido obtener la configuración de stream.')
+                return
         except IceFlix.Unauthorized:
             print(
                 '\n[ERROR] Token de usuario no válido. Es necesario iniciar sesión.\n')
@@ -612,7 +643,10 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
 
         self.prompt = self.prompt.replace('[REPRODUCIENDO] ', '')
         self.client.player.stop()
-        self._controller.stop()
+        self.controller.stop()
+        self.controller_topic.unsubscribe(self.controller_subscriber_proxy)
+        self.controller_topic = None
+        self.controller_subscriber_proxy = None
         self.client.player = None
 
     def do_q(self, initial=None): # pylint: disable=unused-argument
@@ -630,7 +664,7 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
     # ONLY DEBUG
     # def do_autologin(self, initial=None): # pylint: disable=unused-argument, missing-function-docstring
     #     self.username = 'iago'
-    #     self.password_hash = getPasswordSHA256('mipass')
+    #     self.password_hash = get_password_sha256('mipass')
     #     self.user_token = self.client.auth_service.refreshAuthorization(
     #         self.username, self.password_hash)
     #     self.logged = True

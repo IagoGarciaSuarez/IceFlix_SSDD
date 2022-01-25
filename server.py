@@ -8,16 +8,13 @@ import random
 import uuid
 import threading
 import Ice  # pylint: disable=import-error,wrong-import-position
-try:
-    import IceFlix # pylint: disable=import-error,wrong-import-position
-except:
-    Ice.loadSlice('iceflix.ice')
-    import IceFlix # pylint: disable=import-error,wrong-import-position
 import topics
 from volatile_services import VolatileServices
 from discover import Discover
+Ice.loadSlice('iceflix.ice')
+import IceFlix # pylint: disable=import-error,wrong-import-position
 
-class MainService(IceFlix.Main):
+class MainService(IceFlix.Main): # pylint: disable=too-many-instance-attributes
     '''Clase que implementa la interfaz de IceFlix para el servicio principal.'''
     def __init__(self, admin_token, broker):
         self.admin_token = admin_token
@@ -32,6 +29,7 @@ class MainService(IceFlix.Main):
 
     @property
     def get_volatile_services(self):
+        '''Construye y devuelve el objeto VolatileServices con los servicios que tenga.'''
         return VolatileServices(self.auth_services, self.catalog_services)
 
     @property
@@ -55,11 +53,10 @@ class MainService(IceFlix.Main):
                 return IceFlix.AuthenticatorPrx.uncheckedCast(auth_prx)
 
             except Ice.ConnectionRefusedException: # pylint: disable=no-member
-                self._discover_subscriber._auth_services = {
-                    key:val for key, val in self._discover_subscriber._auth_services.items() \
-                    if val!=auth_prx}
+                self._discover_subscriber.auth_services = {
+                    key:val for key, val in self._discover_subscriber.auth_services.items() \
+                    if val != auth_prx}
                 self.auth_services.remove(auth_prx)
-                
             except IndexError:
                 break
 
@@ -76,9 +73,9 @@ class MainService(IceFlix.Main):
                 return IceFlix.MediaCatalogPrx.uncheckedCast(catalog_prx)
 
             except Ice.ConnectionRefusedException: # pylint: disable=no-member
-                self._discover_subscriber._catalog_services = {
-                    key:val for key, val in self._discover_subscriber._catalog_services.items() \
-                    if val!=catalog_prx}
+                self._discover_subscriber.catalog_services = {
+                    key:val for key, val in self._discover_subscriber.catalog_services.items() \
+                    if val != catalog_prx}
                 self.catalog_services.remove(catalog_prx)
 
             except IndexError:
@@ -87,14 +84,15 @@ class MainService(IceFlix.Main):
         print("\n[MAIN SERVICE][ERROR] No se ha encontrado ningún servicio de catálogo.")
         raise IceFlix.TemporaryUnavailable
 
-    def updateDB(self, volatile_services, srvId, current=None):
-        if self.service_id == srvId:
+    def updateDB(self, volatile_services, srv_id, current=None): # pylint: disable=invalid-name, unused-argument
+        '''Actualiza los datos con los recibidos de otro servicio main más antiguo.'''
+        if self.service_id == srv_id:
             return
-        if not self.is_up_to_date:  
-            if srvId not in self.discover_subscriber.main_services.keys():
+        if not self.is_up_to_date:
+            if srv_id not in self.discover_subscriber.main_services.keys():
                 raise IceFlix.UnknownService
 
-            service = IceFlix.MainPrx.checkedCast(self.discover_subscriber.main_services[srvId])
+            service = IceFlix.MainPrx.checkedCast(self.discover_subscriber.main_services[srv_id])
             if not service.isAdmin(self.admin_token):
                 print(
                     "\n[MAIN SERVICE][ERROR] Token de administración no válido. " +
@@ -104,7 +102,7 @@ class MainService(IceFlix.Main):
                 return
             if self.up_to_date_timer.is_alive():
                 self.up_to_date_timer.cancel()
-            print(f'\n[MAIN SERVICE][INFO] Update received from {srvId}.')
+            print(f'\n[MAIN SERVICE][INFO] Update received from {srv_id}.')
             self.auth_services = volatile_services.authenticators.copy()
             self.catalog_services = volatile_services.mediaCatalogs.copy()
             self.is_up_to_date = True
@@ -134,7 +132,7 @@ class Server(Ice.Application):
         servant.discover_subscriber.publisher = discover_publisher
 
         servant.discover_subscriber.publisher.newService(servant_proxy, servant.service_id)
-            
+
         def set_up_to_date():
             print(
                 "\n[MAIN SERVICE][INFO] No update event received. " +
@@ -142,7 +140,7 @@ class Server(Ice.Application):
             print(f'\n[MAIN SERVICE][INFO] My ID is {servant.service_id}')
             servant.is_up_to_date = True
             servant.discover_subscriber.publisher.announce(servant_proxy, servant.service_id)
-            
+
         servant.up_to_date_timer = threading.Timer(3.0, set_up_to_date)
         servant.up_to_date_timer.start()
 
