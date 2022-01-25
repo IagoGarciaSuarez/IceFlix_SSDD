@@ -74,7 +74,7 @@
     struct MediaInfo {
         string name;
         StringList tags;
-     };
+    };
 
     // Media location
     struct Media {
@@ -164,7 +164,7 @@
         Authenticator* getAuthenticator() throws TemporaryUnavailable;
         MediaCatalog* getCatalog() throws TemporaryUnavailable;
 
-        void updateDB(VolatileServices currentServices, string srvId);
+        void updateDB(VolatileServices currentServices, string srvId) throws UnknownService;
 
         bool isAdmin(string adminToken);
     };

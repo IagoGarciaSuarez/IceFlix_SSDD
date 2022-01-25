@@ -16,3 +16,10 @@ class MediaInfo(IceFlix.MediaInfo):
     def __init__(self, name, tags=[]):
         self.name = name
         self.tags = tags
+
+class MediaDB(IceFlix.MediaDB):
+    'Clase para el objeto MediaDB'
+    def __init__(self, mediaId, name, tagsPerUser):
+        self.mediaId = mediaId
+        self.name = name
+        self.tagsPerUser = tagsPerUser

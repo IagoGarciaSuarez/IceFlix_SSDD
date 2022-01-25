@@ -30,8 +30,6 @@ class IceFlixClient: # pylint: disable=too-few-public-methods
             'IceFlix', 'tcp')
         self.adapter.activate()
         self.main_service = None
-        self.catalog_service = None
-        self.auth_service = None
         self.player = None
         # self._user = None
         # self._password_hash = None
@@ -57,36 +55,6 @@ class IceFlixClient: # pylint: disable=too-few-public-methods
 
         if not self.main_service:
             raise RuntimeError('\n[ERROR] Invalid proxy for the main service.\n')
-
-        for intento in range(3):
-            try:
-                self.auth_service = self.main_service.getAuthenticator()
-                print('\n[INFO] Servicio de autenticación conectado.\n')
-                break
-
-            except IceFlix.TemporaryUnavailable:
-                print(
-                    '\n[ERROR] Ha ocurrido un error al conectar con el servicio ' +
-                    'de autenticación.\n')
-                for sec in range(10, 0, -1):
-                    print(
-                        f'[ERROR] Reintentando en {sec} segundos. [{intento+1}/3]', end='\r')
-                    time.sleep(1)
-
-        for intento in range(3):
-            try:
-                self.catalog_service = self.main_service.getCatalog()
-                print('\n[INFO] Servicio de catálogo conectado.\n')
-                break
-
-            except IceFlix.TemporaryUnavailable:
-                print(
-                    '\n[ERROR] Ha ocurrido un error al conectar con el servicio de catálogo.\n')
-                for sec in range(10, 0, -1):
-                    print(
-                        f'[ERROR] Reintentando en {sec} segundos. [{intento+1}/3]', end='\r')
-                    time.sleep(1)
-
 
 class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
     '''IceFlix shell'''
@@ -146,15 +114,17 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
             return
 
         try:
+            auth_service = self.client.main_service.getAuthenticator()
             self.username = input('Nombre de usuario: ')
             self.password_hash = getPasswordSHA256(getpass('Contraseña: '))
-            self.user_token = self.client.auth_service.refreshAuthorization(
-                self.username, self.password_hash)
+            self.user_token = auth_service.refreshAuthorization(self.username, self.password_hash)
             self.logged = True
             print('\n[INFO] Se ha iniciado sesión correctamente.\n')
             self.prompt = f'{self.username}> '
         except IceFlix.Unauthorized:
             print('\n[ERROR] Error al introducir las credenciales.\n')
+        except IceFlix.TemporaryUnavailable:
+            print('\n[ERROR] No existe ningún servicio de autenticación disponible.\n')
         except EOFError:
             print()
 
@@ -221,6 +191,12 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
                 'Escriba \'help iniciar\' para más información.\n')
             return
 
+        try:
+            catalog_service = self.client.main_service.getCatalog()
+        except IceFlix.TemporaryUnavailable:
+            print('\n[ERROR] No existe ningún servicio de catálogo disponible.\n')
+            return
+
         argv = arg.split(' ', 1)
         if len(argv) < 2:
             print(
@@ -232,17 +208,15 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
         self._last_results_ = None
         if mode in ['1', '2']:
             name = argv[1].strip()
-            self._last_results_ = self.client.catalog_service.getTilesByName(
-                name, (mode == '1'))
+            self._last_results_ = catalog_service.getTilesByName(name, (mode == '1'))
 
         elif mode in ['3', '4']:
             tags = [tag.strip() for tag in argv[1].split(',')]
             try:
-                self._last_results_ = self.client.catalog_service\
-                    .getTilesByTags(tags, (mode == '3'), self.user_token)
+                self._last_results_ = catalog_service.getTilesByTags(
+                    tags, (mode == '3'), self.user_token)
             except IceFlix.Unauthorized:
-                print(
-                    '\n[ERROR] Token de usuario no válido. Es necesario iniciar sesión.\n')
+                print('\n[ERROR] Token de usuario no válido. Es necesario iniciar sesión.\n')
                 return
 
         else:
@@ -262,9 +236,15 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
             return
 
         if self._last_results_:
+            try:
+                catalog_service = self.client.main_service.getCatalog()
+            except IceFlix.TemporaryUnavailable:
+                print('\n[ERROR] No existe ningún servicio de catálogo disponible.\n')
+                return
+
             for i, media_id in zip(range(len(self._last_results_)), self._last_results_):
                 try:
-                    media_info = self.client.catalog_service.getTile(media_id)
+                    media_info = catalog_service.getTile(media_id)
                 except IceFlix.WrongMediaId as wmid:
                     print(
                         f'\n[ERROR] No se ha encontrado el medio con id {wmid.mediaId}\n')
@@ -296,6 +276,11 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
                 '\n[ERROR] No se ha conectado a ningún servicio. ' +
                 'Escriba \'help iniciar\' para más información.\n')
             return
+        try:
+            catalog_service = self.client.main_service.getCatalog()
+        except IceFlix.TemporaryUnavailable:
+            print('\n[ERROR] No existe ningún servicio de catálogo disponible.\n')
+            return
 
         if not self.user_token:
             print(
@@ -310,10 +295,9 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
         media_id = arg.strip()
 
         try:
-            self.selected_media = self.client.catalog_service.getTile(media_id)
+            self.selected_media = catalog_service.getTile(media_id)
         except IceFlix.WrongMediaId as wmid:
-            print(
-                f'\n[ERROR] No se ha encontrado el medio con id \'{wmid.mediaId}\'.\n')
+            print(f'\n[ERROR] No se ha encontrado el medio con id \'{wmid.mediaId}\'.\n')
             return
         except IceFlix.TemporaryUnavailable:
             print(
@@ -352,6 +336,12 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
                 'Escriba \'help iniciar\' para más información.\n')
             return
 
+        try:
+            catalog_service = self.client.main_service.getCatalog()
+        except IceFlix.TemporaryUnavailable:
+            print('\n[ERROR] No existe ningún servicio de catálogo disponible.\n')
+            return
+
         if not arg:
             print('\n[ERROR] Es necesario indicar un nuevo nombre.\n')
             return
@@ -369,10 +359,8 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
             return
 
         try:
-            self.client.catalog_service.renameTile(
-                self.selected_media.mediaId, newname, self.user_token)
-            self.selected_media = self.client.catalog_service.getTile(
-                self.selected_media.mediaId)
+            catalog_service.renameTile(self.selected_media.mediaId, newname, self.user_token)
+            self.selected_media = catalog_service.getTile(self.selected_media.mediaId)
 
             if self.admin:
                 self.prompt = (
@@ -391,6 +379,11 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
             print(
                 f'\n[ERROR] El medio con id {wmid.mediaId} no está disponible en este momento.\n')
             return
+        except IceFlix.TemporaryUnavailable:
+            print(
+                f'\n[ERROR] El medio con id {self.selected_media.mediaId} ' +
+                'no está disponible en este momento.\n')
+            return
 
     def do_addtags(self, arg, initial=None): # pylint: disable=unused-argument
         '''addtags tags - Añade una secuencia de tags al medio seleccionado.
@@ -404,6 +397,12 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
             print(
                 '\n[ERROR] No se ha conectado a ningún servicio. ' +
                 'Escriba \'help iniciar\' para más información.\n')
+            return
+
+        try:
+            catalog_service = self.client.main_service.getCatalog()
+        except IceFlix.TemporaryUnavailable:
+            print('\n[ERROR] No existe ningún servicio de catálogo disponible.\n')
             return
 
         if not self.user_token:
@@ -429,8 +428,7 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
         tag_list = [tag.strip() for tag in arg.split(',')]
 
         try:
-            self.client.catalog_service.addTags(
-                media_id, tag_list, self.user_token)
+            catalog_service.addTags(media_id, tag_list, self.user_token)
             print('\n[INFO] Tags añadidas correctamente.\n')
         except IceFlix.Unauthorized:
             print(
@@ -455,6 +453,12 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
                 'Escriba \'help iniciar\' para más información.\n')
             return
 
+        try:
+            catalog_service = self.client.main_service.getCatalog()
+        except IceFlix.TemporaryUnavailable:
+            print('\n[ERROR] No existe ningún servicio de catálogo disponible.\n')
+            return
+
         if not self.user_token:
             print(
                 '\n[ERROR] Para realizar esta operación debe iniciar sesión antes.\n')
@@ -478,8 +482,7 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
         tag_list = [tag.strip() for tag in arg.split(',')]
 
         try:
-            self.client.catalog_service.removeTags(
-                media_id, tag_list, self.user_token)
+            catalog_service.removeTags(media_id, tag_list, self.user_token)
             print('\n[INFO] Tags eliminadas correctamente.\n')
         except IceFlix.Unauthorized:
             print(
@@ -499,13 +502,19 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
                 'Escriba \'help iniciar\' para más información.\n')
             return
 
+        try:
+            auth_service = self.client.main_service.getAuthenticator()
+        except IceFlix.TemporaryUnavailable:
+            print('\n[ERROR] No existe ningún servicio de autenticación disponible.\n')
+            return
+
         if not self.admin:
             print('\n[ERROR] Para realizar esta operación debe ser un administrador.\n')
             return
         try:
             username = input('Nombre del nuevo usuario: ')
             password_hash = getPasswordSHA256(getpass('Contraseña del nuevo usuario: '))
-            self.client.auth_service.addUser(username, password_hash, self.user_token)
+            auth_service.addUser(username, password_hash, self.user_token)
             print('\n[INFO] Usuario añadido correctamente.\n')
         except IceFlix.Unauthorized:
             print('\n[ERROR] Token de administrador no válido.\n')
@@ -521,6 +530,12 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
                 'Escriba \'help iniciar\' para más información.\n')
             return
 
+        try:
+            auth_service = self.client.main_service.getAuthenticator()
+        except IceFlix.TemporaryUnavailable:
+            print('\n[ERROR] No existe ningún servicio de autenticación disponible.\n')
+            return
+
         if not self.admin:
             print('\n[ERROR] Para realizar esta operación debe ser un administrador.\n')
             return
@@ -534,7 +549,7 @@ class IceFlixCLI(cmd.Cmd): # pylint: disable=too-many-instance-attributes
         username = arg.strip()
 
         try:
-            self.client.auth_service.removeUser(username, self.user_token)
+            auth_service.removeUser(username, self.user_token)
             print(f'\n[INFO] Se ha elimiado el usuario \'{username}\' con éxito.\n')
         except IceFlix.Unauthorized:
             print(

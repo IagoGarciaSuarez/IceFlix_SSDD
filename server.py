@@ -10,7 +10,7 @@ import threading
 import Ice  # pylint: disable=import-error,wrong-import-position
 try:
     import IceFlix # pylint: disable=import-error,wrong-import-position
-except ImportError:
+except:
     Ice.loadSlice('iceflix.ice')
     import IceFlix # pylint: disable=import-error,wrong-import-position
 import topics
@@ -28,22 +28,11 @@ class MainService(IceFlix.Main):
         self._srv_id = str(uuid.uuid4())
         self.is_up_to_date = False
         self.up_to_date_timer = None
-
-    @property
-    def is_up_to_date(self):
-        """Return if the database is up to date or not."""
-        return self.is_up_to_date
+        self.prx = None
 
     @property
     def get_volatile_services(self):
         return VolatileServices(self.auth_services, self.catalog_services)
-    # @property
-    # def addAuthService(self, auth_service):
-    #     self._volatile_services.auth_services.append(auth_service)
-
-    # @property
-    # def addCatalogService(self, catalog_service):
-    #     self._volatile_services.catalog_services.append(catalog_service)
 
     @property
     def service_id(self):
@@ -102,21 +91,24 @@ class MainService(IceFlix.Main):
         if self.service_id == srvId:
             return
         if not self.is_up_to_date:  
-            if srvId in self.discover_subscriber.main_services.keys():
-                service = IceFlix.MainPrx.checkedCast(self.discover_subscriber.main_services[srvId])
-                if not service.isAdmin(self.admin_token):
-                    print(
-                        "\n[MAIN SERVICE][ERROR] Token de administración no válido. " +
-                        "Terminando ejecución...", flush=True)
-                    self.up_to_date_timer.cancel()
-                    self._broker.shutdown()
-                    return
-                if self.up_to_date_timer.is_alive():
-                    self.up_to_date_timer.cancel()
-                self.auth_services = volatile_services.authenticators.copy()
-                self.catalog_services = volatile_services.mediaCatalogs.copy()
-                self.is_up_to_date = True
-                self.discover_subscriber.announce_timer.start()
+            if srvId not in self.discover_subscriber.main_services.keys():
+                raise IceFlix.UnknownService
+
+            service = IceFlix.MainPrx.checkedCast(self.discover_subscriber.main_services[srvId])
+            if not service.isAdmin(self.admin_token):
+                print(
+                    "\n[MAIN SERVICE][ERROR] Token de administración no válido. " +
+                    "Terminando ejecución...", flush=True)
+                self.up_to_date_timer.cancel()
+                self._broker.shutdown()
+                return
+            if self.up_to_date_timer.is_alive():
+                self.up_to_date_timer.cancel()
+            print(f'\n[MAIN SERVICE][INFO] Update received from {srvId}.')
+            self.auth_services = volatile_services.authenticators.copy()
+            self.catalog_services = volatile_services.mediaCatalogs.copy()
+            self.is_up_to_date = True
+            self.discover_subscriber.publisher.announce(self.prx, self.service_id)
 
 class Server(Ice.Application):
     '''Clase que implementa el servicio principal.'''
@@ -127,6 +119,7 @@ class Server(Ice.Application):
 
         servant = MainService(broker.getProperties().getProperty('AdminToken'), broker)
         servant_proxy = main_adapter.addWithUUID(servant)
+        servant.prx = servant_proxy
 
         discover_topic = topics.getTopic(topics.getTopicManager(self.communicator()), 'discover')
 
@@ -143,16 +136,18 @@ class Server(Ice.Application):
         servant.discover_subscriber.publisher.newService(servant_proxy, servant.service_id)
             
         def set_up_to_date():
-            print("\n[MAIN SERVICE] No update event received. Assuming I'm the first of my kind...")
+            print(
+                "\n[MAIN SERVICE][INFO] No update event received. " +
+                "Assuming I'm the first of my kind...")
+            print(f'\n[MAIN SERVICE][INFO] My ID is {servant.service_id}')
             servant.is_up_to_date = True
             servant.discover_subscriber.publisher.announce(servant_proxy, servant.service_id)
-            servant.discover_subscriber.announce_timer.start()   
             
         servant.up_to_date_timer = threading.Timer(3.0, set_up_to_date)
         servant.up_to_date_timer.start()
 
 
-        print("\n[MAIN SERVICE] Servicio iniciado.")
+        print("\n[MAIN SERVICE][INFO] Servicio iniciado.")
 
 
         self.shutdownOnInterrupt()

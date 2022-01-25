@@ -27,6 +27,13 @@ run-auth:
 	gnome-terminal -- bash -c \
 	"./authenticator.py --Ice.Config=$(DIRCONFIG)Auth.config; bash"
 
+run-catalog:
+	gnome-terminal -- bash -c \
+	"./catalog.py --Ice.Config=$(DIRCONFIG)Catalog.config; bash"
+
+cleandb:
+	bash -c "rm -- persistence/catalogDB/!(catalog.db|tagsDB.json);"
+	bash -c "rm -- persistence/credentialsDB/!(credentials.json)"
 clean:
 	$(RM) *.out
 	$(RM) -r __pycache__ IceStorm
@@ -38,8 +45,6 @@ clean:
 # # run-server:
 # # 		./server.py --Ice.Config=configurations/Server.config | tee proxy.out
 
-# run-catalog:
-# 		./catalog.py --Ice.Config=configurations/Catalog.config '$(shell head -1 proxy.out)'
 
 # run-auth:
 # 		./authenticator.py --Ice.Config=configurations/Auth.config '$(shell head -1 proxy.out)'

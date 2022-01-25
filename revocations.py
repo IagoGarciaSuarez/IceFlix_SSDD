@@ -1,6 +1,3 @@
-from time import sleep
-import threading
-import random
 from utils import read_cred_db, write_cred_db
 import Ice  # pylint: disable=import-error,wrong-import-position
 try:
@@ -9,7 +6,7 @@ except ImportError:
     Ice.loadSlice('iceflix.ice')
     import IceFlix # pylint: disable=import-error,wrong-import-position
 
-class UserUpdates(IceFlix.UserUpdates):
+class Revocations(IceFlix.Revocations):
     """UserUpdates class to listen to user updates events from other auth services."""
     def __init__(self, service_servant, service):
         """Initialize the UserUpdates object."""
@@ -17,8 +14,8 @@ class UserUpdates(IceFlix.UserUpdates):
         self._service = service
         self.publisher = None
 
-    def newUser(self, user, passwordHash, srvId, current=None): # pylint: disable=unused-argument
-        """Adds a new user."""
+    def revokeToken(self, userToken, srvId, current=None): # pylint: disable=unused-argument
+        """Revokes a token."""
         if srvId == self._service_servant.service_id:
             return
         
@@ -26,9 +23,11 @@ class UserUpdates(IceFlix.UserUpdates):
         credentials[user] = passwordHash
         write_cred_db(credentials, self._service_servant.credentials_db)
 
-    def newToken(self, user, userToken, srvId, current=None):  # pylint: disable=unused-argument
-        """Adds a new token."""
+    def revokeUser(self, user, srvId, current=None):  # pylint: disable=unused-argument
+        """Removes a user."""
         if srvId == self._service_servant.service_id:
             return
-        
-        self._service_servant._users_token[user] = userToken
+
+        credentials = read_cred_db(self._service_servant.credentials_db)
+        credentials.pop(user)
+        write_cred_db(credentials, self._service_servant.credentials_db)

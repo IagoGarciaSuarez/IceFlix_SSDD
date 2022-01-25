@@ -9,8 +9,9 @@ SERVER_MEDIA_DIR = 'resources/'
 CLIENT_MEDIA_DIR = 'client_media/'
 CHUNK_SIZE = 4094
 SPINNER = itertools.cycle(['|', '/', '-', '\\'])
-DATABASE_PATH = 'persistence/credentialsDB'
-TAGS_DB = DATABASE_PATH + 'tagsDB.json'
+CRED_DATABASE_PATH = 'persistence/credentialsDB/'
+CATALOG_DATABASE_PATH = 'persistence/catalogDB/'
+TAGS_DB = CATALOG_DATABASE_PATH + 'tagsDB.json'
 CATALOG_DB = 'catalog.db'
 ICEFLIX_BANNER = """
   ___         _____ _ _      
@@ -23,7 +24,7 @@ ICEFLIX_BANNER = """
 
 class CatalogDB():
     def __init__(self, database):
-        self.database = DATABASE_PATH + database
+        self.database = CATALOG_DATABASE_PATH + database
 
     def _create_connection(self, database_file):
         conn = None
@@ -37,7 +38,7 @@ class CatalogDB():
 
         return conn
         
-    def _drop_table(self):
+    def drop_table(self):
         drop_table_sql = 'DROP TABLE IF EXISTS catalog'
         with self._create_connection(self.database) as conn:
             cursor = conn.cursor()
@@ -51,17 +52,17 @@ class CatalogDB():
             cursor.execute(create_table_sql)
         conn.close()
 
-    def getAll(self):
-        getAll_sql = 'SELECT * FROM catalog'
+    def get_all(self):
+        get_all_sql = 'SELECT * FROM catalog'
         with self._create_connection(self.database) as conn:
             cursor = conn.cursor()
-            cursor.execute(getAll_sql)
+            cursor.execute(get_all_sql)
             result = cursor.fetchall()
         conn.close()
         return result
 
-    def isInCatalog(self, id):
-        exist_sql = f"SELECT * FROM catalog WHERE EXISTS(SELECT 1 FROM catalog WHERE id='{id}');"
+    def is_in_catalog(self, media_id):
+        exist_sql = f"SELECT * FROM catalog WHERE EXISTS(SELECT 1 FROM catalog WHERE id='{media_id}');"
         with self._create_connection(self.database) as conn:
             cursor = conn.cursor()
             cursor.execute(exist_sql)
@@ -71,40 +72,40 @@ class CatalogDB():
         conn.close()
         return result
 
-    def addMedia(self, id, initialName):
-        add_sql = f"INSERT INTO catalog VALUES('{id}','{initialName}')"
+    def add_media(self, media_id, initial_name):
+        add_sql = f"INSERT INTO catalog VALUES('{media_id}','{initial_name}')"
         with self._create_connection(self.database) as conn:
             cursor = conn.cursor()
             cursor.execute(add_sql)
             conn.commit()
         conn.close()
 
-    def getIdByName(self, name, exact):
+    def get_id_by_name(self, name, exact):
         if exact:
-            getIdByName_sql = f"SELECT id FROM catalog WHERE initialName='{name}' COLLATE NOCASE"
+            get_id_by_name_sql = f"SELECT id FROM catalog WHERE initialName='{name}' COLLATE NOCASE"
 
         else:
-            getIdByName_sql = f"SELECT id FROM catalog WHERE initialName LIKE '%{name}%' COLLATE NOCASE"
+            get_id_by_name_sql = f"SELECT id FROM catalog WHERE initialName LIKE '%{name}%' COLLATE NOCASE"
 
         with self._create_connection(self.database) as conn:
             cursor = conn.cursor()
-            cursor.execute(getIdByName_sql)
+            cursor.execute(get_id_by_name_sql)
             result = cursor.fetchall()
         return result
     
-    def getNameById(self, id):
-        getByName_sql = f"SELECT initialName FROM catalog WHERE id='{id}'"
+    def get_name_by_id(self, media_id):
+        get_by_name_sql = f"SELECT initialName FROM catalog WHERE id='{media_id}'"
         with self._create_connection(self.database) as conn:
             cursor = conn.cursor()
-            cursor.execute(getByName_sql)
+            cursor.execute(get_by_name_sql)
             result = cursor.fetchone()
         return result
 
-    def renameMedia(self, id, name):
-        renameMedia_sql = f"UPDATE catalog SET initialName='{name}' WHERE id='{id}'"
+    def rename_media(self, media_id, name):
+        rename_media_sql = f"UPDATE catalog SET initialName='{name}' WHERE id='{media_id}'"
         with self._create_connection(self.database) as conn:
             cursor = conn.cursor()
-            cursor.execute(renameMedia_sql)
+            cursor.execute(rename_media_sql)
             conn.commit()
         conn.close()
 
@@ -129,26 +130,28 @@ def remove_file(id):
             return True
     return False
     
-def read_tags_db():
-    with open(TAGS_DB, 'r') as f:
-            tagsDB = json.load(f)
+def read_tags_db(tags_db):
+    tags_db = CATALOG_DATABASE_PATH + tags_db
+    with open(tags_db, 'r') as f:
+            tags = json.load(f)
             f.close()
-    return tagsDB
+    return tags
 
-def write_tags_db(tagsDB):
-    with open(TAGS_DB, 'w') as f:
-        json.dump(tagsDB, f)
+def write_tags_db(tags, tags_db):
+    tags_db = CATALOG_DATABASE_PATH + tags_db
+    with open(tags_db, 'w') as f:
+        json.dump(tags, f)
         f.close()
 
 def read_cred_db(credentials_db):
-    credentials_db = DATABASE_PATH + credentials_db
+    credentials_db = CRED_DATABASE_PATH + credentials_db
     with open(credentials_db, 'r') as f:
         cred_db = json.load(f)
         f.close()
     return cred_db
 
 def write_cred_db(credentials, credentials_db):
-    credentials_db = DATABASE_PATH + credentials_db
+    credentials_db = CRED_DATABASE_PATH + credentials_db
     with open(credentials_db, 'w') as f:
         json.dump(credentials, f)
         f.close()
