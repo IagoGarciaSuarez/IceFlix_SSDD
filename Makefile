@@ -4,14 +4,15 @@
 DIRCONFIG := configurations/
 
 all: 
-	clean \
-	start
+	$(MAKE) clean
+	$(MAKE) start
 	sleep 1
 	$(MAKE) run-auth
 
 start:
 	$(MAKE) run-icestorm
 	sleep 1
+	$(MAKE) run-auth
 	$(MAKE) run-server
 
 run-icestorm:
@@ -31,30 +32,17 @@ run-catalog:
 	gnome-terminal -- bash -c \
 	"./catalog.py --Ice.Config=$(DIRCONFIG)Catalog.config; bash"
 
-cleandb:
-	bash -c "rm -- persistence/catalogDB/!(catalog.db|tagsDB.json);"
-	bash -c "rm -- persistence/credentialsDB/!(credentials.json)"
+run-streaming:
+	gnome-terminal -- bash -c \
+	"./streaming.py --Ice.Config=$(DIRCONFIG)Provider.config; bash"
+
 clean:
 	$(RM) *.out
 	$(RM) -r __pycache__ IceStorm
+	$(MAKE) cleandb
+	
+cleandb:
+	bash -c "./cleandb.sh"
 
-
-# run-registry:
-# 		icegridregistry --Ice.Config=configurations/registry.config
-
-# # run-server:
-# # 		./server.py --Ice.Config=configurations/Server.config | tee proxy.out
-
-
-# run-auth:
-# 		./authenticator.py --Ice.Config=configurations/Auth.config '$(shell head -1 proxy.out)'
-
-# run-streaming:
-# 		./streaming.py --Ice.Config=configurations/Provider.config '$(shell head -1 proxy.out)'
-
-# run-client:
-# 		./client.py
-
-# clean:
-# 		$(RM) *~ proxy.out
-# 		$(RM) -rf dist
+run-client:
+	./client.py

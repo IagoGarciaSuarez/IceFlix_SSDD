@@ -68,6 +68,7 @@ class Discover(IceFlix.ServiceAnnouncements): # pylint: disable=too-many-instanc
 
         elif service.ice_isA('::IceFlix::StreamProvider') \
             and self._service.ice_isA('::IceFlix::MediaCatalog'):
+            print(f'New stream provider service: {srv_id}', flush=True)
             self.provider_services[srv_id] = IceFlix.StreamProviderPrx.checkedCast(service)
 
         elif service.ice_isA('::IceFlix::Main'):
@@ -121,19 +122,47 @@ class Discover(IceFlix.ServiceAnnouncements): # pylint: disable=too-many-instanc
                     key:val for key, val in self.main_services.items() \
                     if val != main_srv}
 
+        for provider_srv in self.provider_services.values():
+            try:
+                provider_srv.ice_ping()
+            except Ice.ConnectionRefusedException: # pylint: disable=no-member
+                # Todos los catalogs deben reiniciar los proxies. Así, pedirán el reannounce
+                # y evitarán tener proxies inválidos o que no se hayan incluido algunos medios.
+                # Si un provider no está disponible, no tiene sentido que el catálogo muestre ese
+                # medio ya que no se podría reproducir.
+                self.provider_services = {}
+                if self._service.ice_isA('::IceFlix::MediaCatalog'):
+                    self._service_servant.catalog.drop_table()
+                    self._service_servant.catalog.create_table()
+                    self._service_servant.media_with_proxy = {}
+
         if srv_id in self.known_services or srv_id == self._service_servant.service_id:
             return
 
         if service.ice_isA('::IceFlix::Authenticator'):
             self.auth_services[srv_id] = IceFlix.AuthenticatorPrx.checkedCast(service)
 
+            if self._service.ice_isA('::IceFlix::Main'):
+                self._service_servant.auth_services.append(
+                    self.auth_services[srv_id])
+
         elif service.ice_isA('::IceFlix::MediaCatalog'):
             self.catalog_services[srv_id] = IceFlix.MediaCatalogPrx.checkedCast(service)
 
+            if self._service.ice_isA('::IceFlix::Main'):
+                self._service_servant.catalog_services.append(
+                    self.catalog_services[srv_id])
+
         elif service.ice_isA('::IceFlix::StreamProvider') \
-            and self._service.ice_isA('::IceFlix::MediaCatalog'):
+            and self._service.ice_isA('::IceFlix::MediaCatalog') \
+                and self._service_servant.is_up_to_date:
             self.provider_services[srv_id] = IceFlix.StreamProviderPrx.checkedCast(service)
-            self.provider_services[srv_id].reannounceMedia(self._service_servant.service_id)
+            try:
+                self.provider_services[srv_id].reannounceMedia(self._service_servant.service_id)
+            except IceFlix.UnknownService:
+                print(
+                    '\n[CATALOG SERVICE][ERROR] El servicio no ha reconocido ' +
+                    'el id de mi servicio. Se volverá a intentar en su próximo anuncio.\n')
 
         elif service.ice_isA('::IceFlix::Main'):
             self.main_services[srv_id] = IceFlix.MainPrx.checkedCast(service)

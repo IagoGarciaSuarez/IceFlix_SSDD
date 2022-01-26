@@ -137,7 +137,6 @@ class Server(Ice.Application):
             print(
                 "\n[MAIN SERVICE][INFO] No update event received. " +
                 "Assuming I'm the first of my kind...")
-            print(f'\n[MAIN SERVICE][INFO] My ID is {servant.service_id}')
             servant.is_up_to_date = True
             servant.discover_subscriber.publisher.announce(servant_proxy, servant.service_id)
 
@@ -145,6 +144,7 @@ class Server(Ice.Application):
         servant.up_to_date_timer.start()
 
 
+        print(f'\n[MAIN SERVICE][INFO] My ID is {servant.service_id}')
         print("\n[MAIN SERVICE][INFO] Servicio iniciado.")
 
 

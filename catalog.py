@@ -20,7 +20,8 @@ import IceFlix # pylint: disable=import-error,wrong-import-position
 
 class Catalog(IceFlix.MediaCatalog): # pylint: disable = too-many-instance-attributes
     '''Clase que implementa la interfaz de IceFlix para el catálogo.'''
-    def __init__(self):
+    def __init__(self, broker):
+        self.broker = broker
         self._srv_id = str(uuid.uuid4())
         self.tags_db = 'tags_' + self._srv_id + '.json'
         self.catalog = CatalogDB(self._srv_id + '.db')
@@ -31,15 +32,22 @@ class Catalog(IceFlix.MediaCatalog): # pylint: disable = too-many-instance-attri
         self.is_up_to_date = False
         self.up_to_date_timer = None
         self.prx = None
+        self.cu_proxy = None
+        self.sa_proxy = None
 
     @property
     def current_database(self):
         """Get current users db."""
-        # No tiene sentido devolver una lista.
-        # El json de las tags se puede devolver completo, y así se repite por cada medio.
-        return [MediaDB(
-            media_id, self.catalog.get_name_by_id(media_id),
-            read_tags_db(self.tags_db)) for media_id in self.catalog.get_all()]
+        tags_db_ = read_tags_db(self.tags_db)
+        current_database = []
+        for media_id in self.catalog.get_all():
+            tags_per_user = {}
+            for user in tags_db_:
+                if media_id in tags_db_[user]:
+                    tags_per_user[user] = tags_db_[user][media_id]
+            current_database.append(
+                MediaDB(media_id, self.catalog.get_name_by_id(media_id), tags_per_user))
+        return current_database
     @property
     def service_id(self):
         """Get instance ID."""
@@ -59,7 +67,10 @@ class Catalog(IceFlix.MediaCatalog): # pylint: disable = too-many-instance-attri
         main_service = random.choice(list(self.discover_subscriber.main_services.values()))
         auth_service = main_service.getAuthenticator()
 
-        username = auth_service.whois(userToken) # Implicitly throws Unauthorized
+        try:
+            username = auth_service.whois(userToken) # Con esto lanzaría Unauth. Search sin login?
+        except IceFlix.Unauthorized:
+            username = 'NO_USERNAME_FOUND'
 
         tags_db = read_tags_db(self.tags_db)
         tag_list = []
@@ -68,7 +79,7 @@ class Catalog(IceFlix.MediaCatalog): # pylint: disable = too-many-instance-attri
             tag_list = tags_db[username][mediaId]
 
         # Cambiar la forma en la que obtiene el provider si es necesario
-        return Media(mediaId, self.media_with_proxy[mediaId][-1],
+        return Media(mediaId, self.media_with_proxy[mediaId],
                      MediaInfo(self.catalog.get_name_by_id(mediaId), tag_list))
 
     def getTilesByName(self, name, exact, current=None): # pylint: disable=invalid-name, unused-argument
@@ -90,11 +101,12 @@ class Catalog(IceFlix.MediaCatalog): # pylint: disable = too-many-instance-attri
 
         tags_db = read_tags_db(self.tags_db)
         tiles_list = []
-        for media in tags_db[user]:
-            if includeAllTags and all(tag in tags_db[user][media] for tag in tags):
-                tiles_list.append(media)
-            elif not includeAllTags and any(tag in tags_db[user][media] for tag in tags):
-                tiles_list.append(media)
+        if user in tags_db:
+            for media in tags_db[user]:
+                if includeAllTags and all([(tag in tags) for tag in tags_db[user][media]]):
+                    tiles_list.append(media)
+                elif not includeAllTags and any(tag in tags_db[user][media] for tag in tags):
+                    tiles_list.append(media)
 
         return tiles_list
 
@@ -116,13 +128,15 @@ class Catalog(IceFlix.MediaCatalog): # pylint: disable = too-many-instance-attri
         if username in tags_db and media_id in tags_db[username]:
             for tag in tags:
                 tags_db[username][media_id].append(tag)
+        elif username in tags_db:
+            tags_db[username][media_id] = tags
         else:
             tags_dic = {}
             tags_dic[media_id] = tags
             tags_db[username] = tags_dic
 
         write_tags_db(tags_db, self.tags_db)
-        self.catalog_updates_subscriber.publisher.addTags(media_id, username, self.service_id)
+        self.catalog_updates_subscriber.publisher.addTags(media_id, tags, username, self.service_id)
 
     def removeTags(self, media_id, tags, user_token, current=None): # pylint: disable=invalid-name, unused-argument
         '''Elimina tags de un medio.'''
@@ -168,15 +182,25 @@ class Catalog(IceFlix.MediaCatalog): # pylint: disable = too-many-instance-attri
             print(f'\n[CATALOG SERVICE][INFO] Update received from {srv_id}.')
             if self.up_to_date_timer.is_alive():
                 self.up_to_date_timer.cancel()
-            # Sólo guarda la config de tags desde el primer elemento ya que es repetida en todos.
-            if catalog_database:
-                write_tags_db(catalog_database[0].tagsPerUser, self.tags_db)
             # Reinicia la base de datos que tenga para evitar inconsistencias.
             self.catalog.drop_table()
             self.catalog.create_table()
+            new_tags = {}
             for media in catalog_database:
                 self.catalog.add_media(media.mediaId, media.name)
+                for user in media.tagsPerUser:
+                    if user not in new_tags:
+                        new_tags[user] = {media.mediaId: media.tagsPerUser[user]}
+                    else:
+                        new_tags[user][media.mediaId] = media.tagsPerUser[user]
+            write_tags_db(new_tags, self.tags_db)
             self.is_up_to_date = True
+            catalog_updates_topic = topics.getTopic(
+                topics.getTopicManager(self.broker), 'catalogupdates')
+            catalog_updates_topic.subscribeAndGetPublisher({}, self.cu_proxy)
+            stream_announcements_topic = topics.getTopic(
+                topics.getTopicManager(self.broker), 'streamannouncements')
+            stream_announcements_topic.subscribeAndGetPublisher({}, self.sa_proxy)
             self.discover_subscriber.publisher.announce(self.prx, self.service_id)
 
 class CatalogServer(Ice.Application):
@@ -186,7 +210,7 @@ class CatalogServer(Ice.Application):
         catalog_adapter = broker.createObjectAdapterWithEndpoints("CatalogAdapter", "tcp")
         catalog_adapter.activate()
 
-        servant = Catalog()
+        servant = Catalog(broker)
         servant_proxy = catalog_adapter.addWithUUID(servant)
         servant.prx = servant_proxy
 
@@ -206,18 +230,15 @@ class CatalogServer(Ice.Application):
         stream_announcements_topic = topics.getTopic(
             topics.getTopicManager(self.communicator()), 'streamannouncements')
         servant.stream_announcements_subscriber = StreamAnnouncements(servant)
-        stream_announcements_subscriber_proxy = catalog_adapter.addWithUUID(
+        servant.sa_proxy = catalog_adapter.addWithUUID(
             servant.stream_announcements_subscriber)
-        stream_announcements_topic.subscribeAndGetPublisher(
-            {}, stream_announcements_subscriber_proxy)
 
         # Catalog updates topic
         catalog_updates_topic = topics.getTopic(
             topics.getTopicManager(self.communicator()), 'catalogupdates')
         servant.catalog_updates_subscriber = CatalogUpdates(servant)
-        catalog_updates_subscriber_proxy = catalog_adapter.addWithUUID(
+        servant.cu_proxy = catalog_adapter.addWithUUID(
             servant.catalog_updates_subscriber)
-        catalog_updates_topic.subscribeAndGetPublisher({}, catalog_updates_subscriber_proxy)
         publisher = catalog_updates_topic.getPublisher()
         publisher = IceFlix.CatalogUpdatesPrx.uncheckedCast(publisher)
         servant.catalog_updates_subscriber.publisher = publisher
@@ -228,22 +249,29 @@ class CatalogServer(Ice.Application):
             print(
                 "\n[CATALOG SERVICE][INFO] No update event received. " +
                 "Assuming I'm the first of my kind...")
-            print(f'\n[CATALOG SERVICE][INFO] My ID is {servant.service_id}')
             servant.is_up_to_date = True
             servant.catalog = CatalogDB('catalog.db')
+            servant.catalog.drop_table()
             servant.catalog.create_table()
             servant.tags_db = 'tagsDB.json'
+            write_tags_db({}, servant.tags_db)
             servant.discover_subscriber.publisher.announce(servant_proxy, servant.service_id)
+            stream_announcements_topic.subscribeAndGetPublisher(
+                {}, servant.sa_proxy)
+            catalog_updates_topic.subscribeAndGetPublisher({}, servant.cu_proxy)
 
         servant.up_to_date_timer = threading.Timer(3.0, set_up_to_date)
         servant.up_to_date_timer.start()
 
+        print(f'\n[CATALOG SERVICE][INFO] My ID is {servant.service_id}')
         print("\n[CATALOG SERVICE][INFO] Servicio iniciado.")
 
         self.shutdownOnInterrupt()
         broker.waitForShutdown()
 
         discover_topic.unsubscribe(discover_subscriber_proxy)
+        stream_announcements_topic.unsubscribe(servant.sa_proxy)
+        catalog_updates_topic.unsubscribe(servant.cu_proxy)
 
         return 0
 

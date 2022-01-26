@@ -9,6 +9,7 @@ import random
 import uuid
 import sys
 import Ice
+from revocations import Revocations
 import utils
 from discover import Discover
 from iceflixrtsp import RTSPEmitter
@@ -49,10 +50,16 @@ class StreamProvider(IceFlix.StreamProvider):
 
         for media in media_files_list:
             if utils.get_sha256(self.media_dir + media) == media_id:
-                servant = StreamController(user_token, media, self.media_dir)
+                servant = StreamController(
+                    self.discover_subscriber, user_token, media, self.media_dir)
                 controller_prx = current.adapter.addWithUUID(servant)
-                controller_topic = controller_topic = topics.getTopic(topics.getTopicManager(
-                    self.broker), servant.getSyncTopic())
+                revocations_topic = topics.getTopic(
+                    topics.getTopicManager(self.broker), 'revocations')
+                revocations_subscriber = Revocations(servant, controller_prx)
+                rev_prx = current.adapter.addWithUUID(revocations_subscriber)
+                revocations_topic.subscribeAndGetPublisher({}, rev_prx)
+                controller_topic = topics.getTopic(
+                    topics.getTopicManager(self.broker), servant.getSyncTopic())
                 publisher = controller_topic.getPublisher()
                 servant.stream_sync = IceFlix.StreamSyncPrx.uncheckedCast(publisher)
                 return IceFlix.StreamControllerPrx.checkedCast(controller_prx)
@@ -116,14 +123,14 @@ class StreamProvider(IceFlix.StreamProvider):
         if not utils.remove_file(media_id):
             raise IceFlix.WrongMediaId
 
-        self.stream_announcements_publisher.removedMedia(
-            utils.get_sha256(self.media_dir + media_id), self.service_id)
+        self.stream_announcements_publisher.removedMedia(media_id, self.service_id)
         print(f'\n[PROVIDER SERVICE][INFO] Se ha eliminado correctamente el medio {media_id}\n')
 
 
 class StreamController(IceFlix.StreamController): # pylint: disable=too-many-instance-attributes
     '''Clase que implementa la interfaz de IceFlix para el stream controller.'''
-    def __init__(self, user_token, media_name, media_dir):
+    def __init__(self, discover, user_token, media_name, media_dir):
+        self.discover = discover
         self.user_token = user_token
         self.media_dir = media_dir
         self._srv_id = str(uuid.uuid4())
@@ -141,7 +148,7 @@ class StreamController(IceFlix.StreamController): # pylint: disable=too-many-ins
 
     def getSDP(self, user_token, port, current=None): # pylint: disable=invalid-name, unused-argument
         '''Devuelve la configuración del flujo RTSP para la reproducción del vídeo.'''
-        main_service = random.choice(list(self.discover_subscriber.main_services.values()))
+        main_service = random.choice(list(self.discover.main_services.values()))
         try:
             auth = main_service.getAuthenticator()
         except IceFlix.TemporaryUnavailable:
@@ -164,7 +171,7 @@ class StreamController(IceFlix.StreamController): # pylint: disable=too-many-ins
 
     def refreshAuthentication(self, user_token, current=None): # pylint: disable=invalid-name, unused-argument
         '''Refresca el token o eleva una excepción.'''
-        main_service = random.choice(list(self.discover_subscriber.main_services.values()))
+        main_service = random.choice(list(self.discover.main_services.values()))
         try:
             auth = main_service.getAuthenticator()
         except IceFlix.TemporaryUnavailable:
@@ -208,14 +215,16 @@ class StreamServer(Ice.Application):
         discover_subscriber_proxy = stream_adapter.addWithUUID(servant.discover_subscriber)
         discover_topic.subscribeAndGetPublisher({}, discover_subscriber_proxy)
         publisher = discover_topic.getPublisher()
-        discover_publisher = IceFlix.ServiceAnnouncementsPrx.uncheckedCast(publisher)
-        servant.discover_subscriber.publisher = discover_publisher
+        publisher = IceFlix.ServiceAnnouncementsPrx.uncheckedCast(publisher)
+        servant.discover_subscriber.publisher = publisher
         servant.discover_subscriber.announce_timer = threading.Timer(
-            10.0+random.uniform(0.0, 2.0), servant.discover_subscriber.publisher.announce,
+            10.0+random.uniform(0.0, 2.0), function=servant.discover_subscriber.publisher.announce,
             args=[servant_proxy, servant.service_id])
 
         servant.discover_subscriber.publisher.newService(servant_proxy, servant.service_id)
-        servant.discover_subscriber.announce_timer.start()
+        threading.Timer(
+            3.0, servant.discover_subscriber.publisher.announce,
+            args=[servant_proxy, servant.service_id]).start()
 
         media_files_list = utils.list_files(servant.media_dir)
         for media in media_files_list:
@@ -223,11 +232,13 @@ class StreamServer(Ice.Application):
                 utils.get_sha256(servant.media_dir + media),
                 splitext(media)[0], servant.service_id)
 
+        print(f'\n[PROVIDER SERVICE][INFO] My ID is {servant.service_id}')
         print("\n[PROVIDER SERVICE][INFO] Servicio iniciado.")
 
-        discover_topic.unsubscribe(discover_subscriber_proxy)
         self.shutdownOnInterrupt()
         broker.waitForShutdown()
+
+        discover_topic.unsubscribe(discover_subscriber_proxy)
 
         return 0
 

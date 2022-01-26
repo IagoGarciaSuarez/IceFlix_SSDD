@@ -20,7 +20,8 @@ import IceFlix # pylint: disable=import-error,wrong-import-position
 
 class Authenticator(IceFlix.Authenticator): # pylint: disable=too-many-instance-attributes
     '''Clase que implementa la interfaz de IceFlix para el authenticator.'''
-    def __init__(self, users_token):
+    def __init__(self, broker, users_token):
+        self.broker = broker
         self.users_token = users_token
         self._srv_id = str(uuid.uuid4())
         self.credentials_db = self._srv_id + '.json'
@@ -30,6 +31,8 @@ class Authenticator(IceFlix.Authenticator): # pylint: disable=too-many-instance-
         self.revocations_subscriber = None
         self.is_up_to_date = False
         self.up_to_date_timer = None
+        self.ua_prx = None
+        self.rev_prx = None
 
     @property
     def current_database(self):
@@ -49,7 +52,7 @@ class Authenticator(IceFlix.Authenticator): # pylint: disable=too-many-instance-
             self.users_token[username] = new_token
             self.userupdates_subscriber.publisher.newToken(username, new_token, self.service_id)
             revocation_timer = threading.Timer(
-                120.0, self.revocations_subscriber.publisher.revokeToken,
+                12.0, self.revocations_subscriber.publisher.revokeToken,
                 args=[new_token, self.service_id])
             revocation_timer.start()
             return new_token
@@ -94,9 +97,12 @@ class Authenticator(IceFlix.Authenticator): # pylint: disable=too-many-instance-
         if not main_service.isAdmin(admin_token) or username not in credentials:
             raise IceFlix.Unauthorized
 
+        if username in self.users_token:
+            self.revocations_subscriber.publisher.revokeToken(
+                self.users_token.pop(username), self.service_id)
         credentials.pop(username)
         write_cred_db(credentials, self.credentials_db)
-        self.revocations_subscriber.publisher.revokeUser(self.users_token.pop(username))
+        self.revocations_subscriber.publisher.revokeUser(username, self.service_id)
 
     def updateDB(self, current_database, srv_id, current=None): # pylint: disable=invalid-name, unused-argument
         '''Actualiza la base de datos de un servicio que esté vivo desde antes.'''
@@ -112,6 +118,12 @@ class Authenticator(IceFlix.Authenticator): # pylint: disable=too-many-instance-
             write_cred_db(current_database.userPasswords, self.credentials_db)
             self.is_up_to_date = True
             self.discover_subscriber.publisher.announce(self.prx, self.service_id)
+            user_updates_topic = topics.getTopic(topics.getTopicManager(
+                self.broker), 'userupdates')
+            user_updates_topic.subscribeAndGetPublisher({}, self.ua_prx)
+            revocations_topic = topics.getTopic(topics.getTopicManager(
+                self.broker), 'revocations')
+            revocations_topic.subscribeAndGetPublisher({}, self.rev_prx)
 
 class AuthServer(Ice.Application):
     '''Clase que implementa el servicio de autenticación.'''
@@ -122,7 +134,7 @@ class AuthServer(Ice.Application):
 
         users_tokens = {}
 
-        servant = Authenticator(users_tokens)
+        servant = Authenticator(broker, users_tokens)
         servant_proxy = auth_adapter.addWithUUID(servant)
         servant.prx = servant_proxy
 
@@ -130,8 +142,7 @@ class AuthServer(Ice.Application):
         user_updates_topic = topics.getTopic(topics.getTopicManager(
             self.communicator()), 'userupdates')
         servant.userupdates_subscriber = UserUpdates(servant, servant_proxy)
-        userupdates_subscriber_proxy = auth_adapter.addWithUUID(servant.userupdates_subscriber)
-        user_updates_topic.subscribeAndGetPublisher({}, userupdates_subscriber_proxy)
+        servant.ua_prx = auth_adapter.addWithUUID(servant.userupdates_subscriber)
         publisher = user_updates_topic.getPublisher()
         publisher = IceFlix.UserUpdatesPrx.uncheckedCast(publisher)
         servant.userupdates_subscriber.publisher = publisher
@@ -140,8 +151,7 @@ class AuthServer(Ice.Application):
         revocations_topic = topics.getTopic(topics.getTopicManager(
             self.communicator()), 'revocations')
         servant.revocations_subscriber = Revocations(servant, servant_proxy)
-        revocations_subscriber_proxy = auth_adapter.addWithUUID(servant.revocations_subscriber)
-        revocations_topic.subscribeAndGetPublisher({}, revocations_subscriber_proxy)
+        servant.rev_prx = auth_adapter.addWithUUID(servant.revocations_subscriber)
         publisher = revocations_topic.getPublisher()
         publisher = IceFlix.RevocationsPrx.uncheckedCast(publisher)
         servant.revocations_subscriber.publisher = publisher
@@ -164,22 +174,24 @@ class AuthServer(Ice.Application):
             print(
                 "\n[AUTH SERVICE][INFO] No update event received. " +
                 "Assuming I'm the first of my kind...")
-            print(f'\n[AUTH SERVICE][INFO] My ID is {servant.service_id}')
             servant.is_up_to_date = True
             servant.credentials_db = 'credentials.json'
+            revocations_topic.subscribeAndGetPublisher({}, servant.rev_prx)
+            user_updates_topic.subscribeAndGetPublisher({}, servant.ua_prx)
             servant.discover_subscriber.publisher.announce(servant_proxy, servant.service_id)
 
         servant.up_to_date_timer = threading.Timer(3.0, set_up_to_date)
         servant.up_to_date_timer.start()
 
+        print(f'\n[AUTH SERVICE][INFO] My ID is {servant.service_id}')
         print("\n[AUTH SERVICE][INFO] Servicio iniciado.")
 
         self.shutdownOnInterrupt()
         broker.waitForShutdown()
 
         discover_topic.unsubscribe(discover_subscriber_proxy)
-        user_updates_topic.unsubscribe(userupdates_subscriber_proxy)
-        revocations_topic.unsubscribe(revocations_subscriber_proxy)
+        user_updates_topic.unsubscribe(servant.ua_prx)
+        revocations_topic.unsubscribe(servant.rev_prx)
 
         return 0
 

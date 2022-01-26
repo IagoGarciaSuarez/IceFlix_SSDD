@@ -15,9 +15,9 @@ class StreamAnnouncements(IceFlix.StreamAnnouncements):
             return
         if not self._service_servant.catalog.is_in_catalog(media_id):
             self._service_servant.catalog.add_media(media_id, initial_name)
-        if srv_id in self._service_servant.discover_subscriber.provider_services.keys():
-            self._service_servant.media_with_proxy[media_id] = self._service_servant \
-                .discover_subscriber.provider_services[srv_id]
+
+        self._service_servant.media_with_proxy[media_id] = self._service_servant \
+            .discover_subscriber.provider_services[srv_id]
 
     def removedMedia(self, media_id, srv_id, current=None):  # pylint: disable=unused-argument, invalid-name
         """Removes a media entry in the catalog."""

@@ -147,7 +147,7 @@ def list_files(path):
 def remove_file(media_id):
     '''Elimina un archivo.'''
     for media in list_files(SERVER_MEDIA_DIR):
-        if get_sha256(SERVER_MEDIA_DIR + media_id) == media_id:
+        if get_sha256(SERVER_MEDIA_DIR + media) == media_id:
             remove(SERVER_MEDIA_DIR + media)
             return True
     return False

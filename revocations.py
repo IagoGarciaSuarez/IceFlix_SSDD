@@ -15,15 +15,14 @@ class Revocations(IceFlix.Revocations):
 
     def revokeToken(self, user_token, srv_id, current=None): # pylint: disable=unused-argument, invalid-name
         """Revokes a token."""
-        if srv_id == self._service_servant.service_id:
-            return
-
-        if self._service.ice_isA('::IceFlix::Authenticator'):
+        if self._service and self._service.ice_isA('::IceFlix::Authenticator'):
             print(f'\n[AUTH SERVICE][INFO] Token revocation from {srv_id}')
             username = self._service_servant.whois(user_token)
             self._service_servant.users_token.pop(username)
 
-        elif self._service.ice_isA('::IceFlix::StreamController'):
+        elif self._service and self._service.ice_isA('::IceFlix::StreamController'):
+            if srv_id == self._service_servant.service_id:
+                return
             print(
                 f'\n[CONTROLLER SERVICE][WARNING] Token revocation from {srv_id}. ' +
                 'Asking for refresh...')
@@ -48,10 +47,9 @@ class Revocations(IceFlix.Revocations):
 
     def revokeUser(self, user, srvId, current=None):  # pylint: disable=unused-argument, invalid-name
         """Removes a user."""
-        if srvId == self._service_servant.service_id:
-            return
-
-        if self._service.ice_isA('::IceFlix::Authenticator'):
+        if self._service and self._service.ice_isA('::IceFlix::Authenticator'):
+            if srvId == self._service_servant.service_id:
+                return
             print(f'\n[AUTH SERVICE][INFO] User revocation from {srvId}')
             credentials = read_cred_db(self._service_servant.credentials_db)
             credentials.pop(user)
