@@ -52,7 +52,7 @@ class Authenticator(IceFlix.Authenticator): # pylint: disable=too-many-instance-
             self.users_token[username] = new_token
             self.userupdates_subscriber.publisher.newToken(username, new_token, self.service_id)
             revocation_timer = threading.Timer(
-                12.0, self.revocations_subscriber.publisher.revokeToken,
+                120.0, self.revocations_subscriber.publisher.revokeToken,
                 args=[new_token, self.service_id])
             revocation_timer.start()
             return new_token
