@@ -4,9 +4,7 @@ printf 'INICIANDO ICEFLIX...\n\n\n'
 make clean
 sleep 0.1
 make start & 
-sleep 0.25
-make run-auth & 
-sleep 0.25
+sleep 0.1
 make run-catalog &
-sleep 0.25
+sleep 3.5
 make run-streaming
